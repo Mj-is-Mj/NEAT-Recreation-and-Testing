@@ -7,9 +7,12 @@
 // Since the odds of hittin repeat connections will be quite low, we instead 
 // just pick random nodes and see if the connection exists. This can be reliably 
 // done with very few attempts in most networks, but we set a limit just in case. 
+// The one exception is the initial fully-connected networks
 #ifndef MAX_TRIES_ADD_CONNECTION
     #define MAX_TRIES_ADD_CONNECTION 10
 #endif
+
+// #define WARN_MAX_TRIES_EXCEEDED
 
 
 namespace NEAT {
@@ -27,10 +30,15 @@ void GenePool_s::clear() {
     species.clear();
 }
 
-bool GenePool_s::addGenome(const Genome_s &genome) {
+bool GenePool_s::addGenome(const Genome_s genome, const GenomeID_t count) {
     if (&(genome.POOL) != this) return false;
 
-    gene_pool.push_back(genome);
+    for (GenomeID_t i = 0; i < count; ++i) {
+        // Insignificant design decision: `genome` or `genome.duplicate()`?
+        // Determines whether copies have the same or different IDs
+        gene_pool.emplace_back(genome.duplicate());
+    }
+
     return true;
 }
 
@@ -87,6 +95,45 @@ void GenePool_s::printNode(std::ostream& out, const NodeID_t n) const {
     }
 }
 
+std::ostream& operator<<(std::ostream& out, const GenePool_s& pool) {
+    out << "Parameters {" << std::endl
+        << "\tInputs:  " << pool.INPUT_NODE_COUNT << std::endl
+        << "\tOutputs: " << pool.INPUT_NODE_COUNT << std::endl
+        << "\tBais:    " << (pool.HAS_BIAS_NODE ? "present" : "absent")
+        << std::endl << "}" << std::endl;
+
+
+    for (const auto& spec : pool.species) {
+        out << "Species " << spec.ID << ": {" << std::endl
+            << "\tExitinct:        " << (spec.allowed_to_reproduce ? "no" : "yes") << std::endl
+            << "\tMAX Fitness OAT: " << spec.cumulative_max_fitness << std::endl
+            << "\tCurrent Max Fit: " << spec.current_max_fitness<< std::endl
+            << "\tCurrent Avg Fit: " << spec.current_avg_fitness << std::endl
+            << "\tStaleness:       " << spec.staleness << std::endl
+            << "\tMembers: {" << std::endl;
+        for (const auto& gid : spec.members) {
+            const auto& genome = pool.gene_pool[gid];
+            out << "\t\t";
+            genome.simplifiedPrint(out);
+            out << ", " << std::endl;
+        }
+        out << "\t}" << std::endl
+            << "}\n" << std::endl;
+    }
+
+    if (pool.species.size() > 0) return out;
+
+    out << "Members: {" << std::endl;
+    for (const auto& genome : pool.gene_pool) {
+        out << "\t";
+        genome.simplifiedPrint(out);
+        out << ", " << std::endl;
+    }
+    out << "}" << std::endl;
+
+    return out;
+}
+
 
 /// GENE ///
 std::ostream& operator<<(std::ostream& out, const Gene_s& gene) {
@@ -102,6 +149,8 @@ std::ostream& operator<<(std::ostream& out, const Gene_s& gene) {
 Genome_s::Genome_s(const GenePool_s& pool, const bool fully_connect) 
     : POOL(pool)
     , ID(pool.getNextGenomeNumber())
+    , PARENT_A(ERR_VAL<NodeID_t>())
+    , PARENT_B(ERR_VAL<NodeID_t>())
     , node_count(pool.INPUT_NODE_COUNT + pool.OUTPUT_NODE_COUNT)\
     , fitness(0)
     , genome()
@@ -120,10 +169,25 @@ Genome_s::Genome_s(const GenePool_s& pool, const bool fully_connect)
 
 Genome_s::Genome_s(const Genome_s& other) 
     : POOL(other.POOL)
-    , ID(POOL.getNextGenomeNumber())
-    , node_count(POOL.INPUT_NODE_COUNT + POOL.OUTPUT_NODE_COUNT)\
-    , fitness(0)
+    , ID(other.ID)
+    , PARENT_A(other.PARENT_A)
+    , PARENT_B(other.PARENT_B)
+    , node_count(other.node_count)
+    , fitness(other.fitness)
     , genome(other.genome)
+{}
+
+Genome_s::Genome_s(
+    const GenePool_s& pool, const GenomeID_t& ID, 
+    const GenomeID_t parent_a, const GenomeID_t parent_b,
+    const NodeID_t node_count, const std::vector<Gene_s>& genome
+)   : POOL(pool)
+    , ID(ID)
+    , PARENT_A(parent_a)
+    , PARENT_B(parent_b)
+    , node_count(node_count)
+    , fitness(0)
+    , genome(genome)
 {}
 
 NodeID_t Genome_s::getRandomNodeID() const {
@@ -133,7 +197,7 @@ NodeID_t Genome_s::getRandomHiddenNodeID() const {
     return RandUtil::randRange(getHiddenNodeStart(), getHiddenNodeEnd());
 }
 NodeID_t Genome_s::getRandomInputOrHiddenNodeID() const {
-    const NodeID_t N = RandUtil::randUpTo(getRandomInputNodeID());
+    const NodeID_t N = RandUtil::randUpTo(getInputNodeCount() + getHiddenNodeCount());
     if (N < getInputNodeCount()) {
         return getInputNodeStart() + N;
     }
@@ -142,7 +206,7 @@ NodeID_t Genome_s::getRandomInputOrHiddenNodeID() const {
     }
 }
 NodeID_t Genome_s::getRandomOutputOrHiddenNodeID() const {
-    const NodeID_t N = RandUtil::randUpTo(getRandomOutputNodeID());
+    const NodeID_t N = RandUtil::randUpTo(getOutputNodeCount() + getHiddenNodeCount());
     if (N < getOutputNodeCount()) {
         return getOutputNodeStart() + N;
     }
@@ -209,15 +273,16 @@ bool Genome_s::mutateAddConnection() {
         return true;
     }
 
-    std::cerr << "WARNING: Failed to create connection: "
-        << from << "->" << to << " | " 
-        << __FILE__ << __LINE__ << std::endl;
+    #ifdef WARN_MAX_TRIES_EXCEEDED
+        std::cerr << "WARNING: Failed to create connection: "
+            << from << "->" << to << " | " 
+            << __FILE__ << __LINE__ << std::endl;
+    #endif
 
     return false;
 }
 
 bool Genome_s::mutateAddBias() { 
-    const Float_t& WEIGHT_RANGE = POOL.PARAMETERS.reproduction.mutation.weight_random_range;
     const NodeID_t& BIAS = getBiasNode();
     assert(hasBias());
 
@@ -229,17 +294,89 @@ bool Genome_s::mutateAddBias() {
 
         addBias(
             to, 
-            (RandUtil::randF()-0.5) * (WEIGHT_RANGE*2),
+            getRandomWeight(),
             true
         );
         return true;
     }
 
+    #ifdef WARN_MAX_TRIES_EXCEEDED
     std::cerr << "WARNING: Failed to create bias connection: "
         << BIAS << "->" << to << " | " 
         << __FILE__ << __LINE__ << std::endl;
+    #endif
 
     return false;
+}
+
+bool Genome_s::mutateSetConnection(const bool enabled) {
+    const GenomeID_t TARGET = getRandomConnectionID();
+    
+    // Try every connection, starting with the randomly selected one
+    GenomeID_t i = TARGET;
+    do {
+        Gene_s& gene = genome[i];
+        if (gene.enabled != enabled) {
+            gene.enabled = enabled;
+            return true;
+        }
+
+        i = (i+1) % getGenomeSize();
+    } while (i != TARGET);
+
+    std::cerr << "WARNING: Failed to " << (enabled ? "enable" : "disable") 
+        << "a connection." << __FILE__ << __LINE__ << std::endl;
+
+    return false;
+}
+
+void Genome_s::mutateSetRandomWeight() {
+    getRandomGenome().weight = getRandomWeight();
+}
+
+void Genome_s::mutatePerturbWeight() {
+    getRandomGenome().weight += getRandomWeightPerturbation();
+}
+
+void Genome_s::mutate() {
+    #define REPEAT(N) for (\
+        size_t i = 0; \
+        i < RandUtil::randCount<size_t>(N);\
+        ++i \
+    )
+
+    const auto& PARAMS = POOL.PARAMETERS.reproduction.mutation;
+
+    REPEAT(PARAMS.rates.add_node) {
+        mutateAddNode();
+    }
+
+    REPEAT(PARAMS.rates.add_connection) {
+        mutateAddConnection();
+    }
+
+    REPEAT(PARAMS.rates.add_bias) {
+        mutateAddBias();
+    }
+    
+    REPEAT(PARAMS.rates.disable_connection) {
+        mutateDisableConnection();
+    }
+    
+    REPEAT(PARAMS.rates.enable_connection) {
+        mutateEnableConnection();
+    }
+    
+    REPEAT(PARAMS.rates.weight) {
+        if (RandUtil::randProb(PARAMS.weight_perturb_chance)) {
+            mutatePerturbWeight();
+        }
+        else {
+            mutateSetRandomWeight();
+        }
+    }
+
+    #undef REPEAT
 }
 
 
@@ -262,6 +399,14 @@ std::ostream& operator<<(std::ostream& out, const Genome_s& genome) {
 
     out << "\t}" << std::endl << "}" << std::endl;
     return out;
+}
+
+void Genome_s::simplifiedPrint(std::ostream& out) const {
+    out << "Genome " << ID << ": {";
+    for (const auto& gene : genome) {
+        out << gene.INNOVATION_NUM << ", ";
+    }
+    out << "}";
 }
 
 

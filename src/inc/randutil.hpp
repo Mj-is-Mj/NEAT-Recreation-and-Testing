@@ -41,7 +41,7 @@ inline bool randProb(const float_t prob) {
 // Generates a partially random whole number. 
   // Returns (whole number portion of avg_count + fractional portion treated as the probability of being 1 rather than 0)
   // E.g. 4.3 has a 70% chance of return 4 and a 30% chance of returning 5, returning 4.3 on average
-template<typename float_t, typename count_t = size_t>
+template<typename count_t = size_t, typename float_t>
 inline count_t randCount(const float_t avg_count) {
     count_t count = (count_t)avg_count;
 

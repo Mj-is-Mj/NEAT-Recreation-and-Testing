@@ -1,5 +1,6 @@
 #pragma once
 
+#include "randutil.hpp"
 #include <cstdlib>
 #include <cassert>
 
@@ -211,10 +212,11 @@ struct GenePool_s {
     // Clears all genomes and sepcies, resets `innovation_num` and other mutables, etc.
     void clear();
     // Create a genome in the pool and return a reference to it
-    inline Genome_s& makeGenome(const bool fully_connect = false) 
+    // Node: This genome is contained in a vector, so the reference will become invalid on resizes
+    inline Genome_s& makeGenome(const bool fully_connect = false, const GenomeID_t count = 1) 
         { return gene_pool.emplace_back(*this, fully_connect); }
     // Add a genome to the pool
-    bool addGenome(const Genome_s& genome);
+    bool addGenome(const Genome_s genome, const GenomeID_t count = 1);
 
     
     /// Nodes ///
@@ -238,6 +240,7 @@ struct GenePool_s {
     NodeType_e getNodeType(const NodeID_t n) const;
 
     /// DEBUGGING ///
+    friend std::ostream& operator<<(std::ostream& out, const GenePool_s& pool);
     void printNode(std::ostream& out, const NodeID_t n) const;
 };
 
@@ -278,15 +281,26 @@ struct Genome_s {
     // The `GenePool_s` that this genome is contained in
     const GenePool_s& POOL;
     const GenomeID_t ID;
+    const GenomeID_t PARENT_A, PARENT_B; // The IDs of each parent
     NodeID_t node_count;
     Float_t fitness;
     std::vector<Gene_s> genome;
 
     /// Constructors ///
-    // Create a empty or fully-connected genome
-    Genome_s(const GenePool_s& pool, const bool fully_connect = false);
     // Copy constructor
     Genome_s(const Genome_s& other);
+    // Parameter-based constructor
+    Genome_s(
+        const GenePool_s& pool, const GenomeID_t& ID, 
+        const GenomeID_t parent_a, const GenomeID_t parent_b,
+        const NodeID_t node_count, const std::vector<Gene_s>& genome
+    );
+    // Create a empty or fully-connected genome
+    Genome_s(const GenePool_s& pool, const bool fully_connect = false);
+    // Returns a genome that is an identical child of another genome
+    // Distinct from the copy constructor since it has a different ID
+    inline Genome_s duplicate() const
+        { return Genome_s(POOL, POOL.getNextGenomeNumber(), ID, ERR_VAL<NodeID_t>(), node_count, genome); }
 
     /// GETTERS ///
     // Counts/sizes
@@ -308,6 +322,7 @@ struct Genome_s {
     NodeID_t getRandomInputOrHiddenNodeID() const;
     NodeID_t getRandomOutputOrHiddenNodeID() const;
     GeneID_t getRandomGeneID() const;
+    inline Gene_s& getRandomGenome() { return genome[getRandomGeneID()]; }
     // Checks and whatnot
     bool connectionExists(const NodeID_t from, const NodeID_t to);
     
@@ -320,17 +335,21 @@ struct Genome_s {
     void addNode(Gene_s& connection);
 
     /// MUTATIONS ///
+    inline Float_t getRandomWeight() const { 
+        return (RandUtil::randF<Float_t>()-0.5)
+        *(2*POOL.PARAMETERS.reproduction.mutation.weight_random_range);
+    }
+    inline Float_t getRandomWeightPerturbation() const { 
+        return (RandUtil::randF<Float_t>()-0.5)
+        *(2*POOL.PARAMETERS.reproduction.mutation.weight_perturb_amount);
+    }
     void mutateAddNode();
     bool mutateAddConnection();
     bool mutateAddBias();
-    void mutateEnableConnection();
-    void mutateDisableConnection();
+    bool mutateSetConnection(const bool enabled);
     void mutateSetRandomWeight();
     void mutatePerturbWeight();
     void mutate();
-
-    /// BINARY OPERATIONS ///
-    static Genome_s crossover(const Genome_s& a, const Genome_s& b);
     
     /// ALIASES ///
     // Calls to `GenePool` member functions
@@ -350,9 +369,12 @@ struct Genome_s {
     inline GeneID_t getRandomConnectionID() const { return getRandomGeneID(); }
     inline void addBias(const NodeID_t to, const Float_t weight = 1, const bool enabled = true)
         { assert(hasBias()); addConnection(getBiasNode(), to, weight, enabled); }
+    inline void mutateEnableConnection() { mutateSetConnection(true); };
+    inline void mutateDisableConnection() { mutateSetConnection(false); };
     
     /// DEBUGGING ///
     friend std::ostream& operator<<(std::ostream& out, const Genome_s& genome);
+    void simplifiedPrint(std::ostream& out) const;
     inline void printNode(std::ostream& out, const NodeID_t n) const { POOL.printNode(out, n); }
 };
 
