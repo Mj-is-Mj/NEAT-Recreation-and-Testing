@@ -38,9 +38,7 @@ bool GenePool_s::addGenome(const Genome_s genome, const GenomeID_t count) {
     gene_pool.emplace_back(genome);
 
     for (GenomeID_t i = 1; i < count; ++i) {
-        // Insignificant design decision: `genome` or `genome.duplicate()`?
-        // Determines whether copies have the same or different IDs
-        gene_pool.emplace_back(genome.clone());
+        gene_pool.emplace_back(genome.duplicate());
     }
 
     return true;
@@ -328,9 +326,10 @@ bool Genome_s::mutateSetConnection(const bool enabled) {
         i = (i+1) % getGenomeSize();
     } while (i != TARGET);
 
-    std::cerr << "WARNING: Failed to " << (enabled ? "enable" : "disable") 
-        << "a connection." << __FILE__ << __LINE__ << std::endl;
-
+    #ifdef WARN_MAX_TRIES_EXCEEDED
+        std::cerr << "WARNING: Failed to " << (enabled ? "enable" : "disable") 
+            << " a connection." << __FILE__ << __LINE__ << std::endl;
+    #endif
     return false;
 }
 

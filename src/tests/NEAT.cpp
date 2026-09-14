@@ -134,7 +134,7 @@ void testCrossover(NodeID_t in, NodeID_t out, bool bias, Parameters_s params) {
         evaluateNetwork
     );
 
-    const Genome_s genome1 = pool.makeGenome(true).clone();
+    const Genome_s genome1 = pool.makeGenome(true).duplicate();
     pool.addGenome(genome1, 4);
 
     std::cout << pool;
@@ -165,8 +165,8 @@ int main() {
         .add_node = 0.3,
         .add_connection = 1.8,
         .add_bias = 0.5,
-        .disable_connection = 0,
-        .enable_connection = 0,
+        .disable_connection = 0.5,
+        .enable_connection = 0.5,
         .weight = 0.5,
     };
 

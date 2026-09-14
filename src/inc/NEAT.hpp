@@ -288,6 +288,7 @@ struct Genome_s {
 
 
     /// CONSTRUCTORS ///
+    
     // Copy constructor
     Genome_s(const Genome_s& other);
     // Parameter-based constructor
@@ -298,13 +299,22 @@ struct Genome_s {
     );
     // Create a empty or fully-connected genome
     Genome_s(const GenePool_s& pool, const bool fully_connect = false);
-    // Returns a genome that is an identical child of another genome
-    // Distinct from the copy constructor since it has a different ID
+    
+    // Returns a genome that is an identical clone of another genome. 
+    // Distinct from the copy constructor since yields a different ID. 
+    // Result is considered a child of the genome it's cloned from. 
     inline Genome_s clone() const
         { return Genome_s(POOL, POOL.getNextGenomeNumber(), ID, ERR_VAL<NodeID_t>(), node_count, genome); }
+    
+    // Returns a genome that is an identical child of another genome. 
+    // Distinct from the copy constructor since yields a different ID. 
+    // Result is considered a sibiling of the genome it's cloned from. 
+    inline Genome_s duplicate() const
+        { return Genome_s(POOL, POOL.getNextGenomeNumber(), PARENT_A, PARENT_B, node_count, genome); }
 
 
     /// GETTERS ///
+
     // Counts/sizes
     constexpr bool hasBias() const { return POOL.HAS_BIAS_NODE; }; 
     constexpr NodeID_t getNodeCount() const { return node_count; };
@@ -313,11 +323,13 @@ struct Genome_s {
     constexpr NodeID_t getHiddenNodeCount() const 
         { return node_count - getInputNodeCount() - getOutputNodeCount(); };
     inline GeneID_t getGenomeSize() const { return genome.size(); }
+    
     // Identity
     constexpr GenomeID_t getID() const { return ID; };
     const std::vector<Gene_s>& getGenome() const { return genome; };
     constexpr const GenePool_s& getGenePool() const { return POOL; };
     constexpr Float_t getFitness() const { return fitness; };
+    
     // Random getters
     NodeID_t getRandomNodeID() const;
     NodeID_t getRandomHiddenNodeID() const;
@@ -325,6 +337,7 @@ struct Genome_s {
     NodeID_t getRandomOutputOrHiddenNodeID() const;
     GeneID_t getRandomGeneID() const;
     inline Gene_s& getRandomGenome() { return genome[getRandomGeneID()]; }
+    
     // Checks and whatnot
     bool connectionExists(const NodeID_t from, const NodeID_t to);
     
