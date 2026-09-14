@@ -205,7 +205,7 @@ struct GenePool_s {
         , generation_num(0)
         , gene_pool()
         , species()
-    {}
+    { gene_pool.reserve(parameters.population_size); }
 
 
     /// Initialization ///

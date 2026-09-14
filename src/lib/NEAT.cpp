@@ -33,6 +33,8 @@ void GenePool_s::clear() {
 bool GenePool_s::addGenome(const Genome_s genome, const GenomeID_t count) {
     if (&(genome.POOL) != this) return false;
 
+    gene_pool.reserve(gene_pool.size() + count);
+
     gene_pool.emplace_back(genome);
 
     for (GenomeID_t i = 1; i < count; ++i) {
@@ -407,24 +409,36 @@ Genome_s Genome_s::crossover(const Genome_s &pA, const Genome_s &pB) {
          {}
     );
 
-    GeneID_t gi = 0;
 
-    // While `gi` refers to matching genes between the two parents
-    while (
-        gi < pA.getGenomeSize() && gi < pB.getGenomeSize()
-        && INNOV_NUM(pA,gi) == INNOV_NUM(pB,gi)
-    ) {
-        ++gi;
-    }
+    GenomeID_t iA=0, iB=0;
+    bool A_has_excess;
 
-    const NodeID_t MATCHING_COUNT = gi;
-    const NodeID_t GENOME_SIZE = pA.getGenomeSize() + pB.getGenomeSize() - MATCHING_COUNT;
-    child.genome.reserve(GENOME_SIZE);
+    while (true) {
+        if (iA >= pA.getGenomeSize()) {
+            A_has_excess = false;
+            break;
+        }
+        if (iB >= pB.getGenomeSize()) {
+            A_has_excess = true;
+            break;
+        }
 
-    // Copy all matching genes
-    for (gi = 0; gi < MATCHING_COUNT; ++gi) {
-        const Gene_s& gA = pA.genome[gi];
-        const Gene_s& gB = pB.genome[gi];
+        const Gene_s& gA = pA.genome[iA];
+        const Gene_s& gB = pB.genome[iB];
+
+        // If genes are disjoint, add genes in order of innovation number
+        if (gA.INNOVATION_NUM != gB.INNOVATION_NUM) {
+            if (gA.INNOVATION_NUM < gB.INNOVATION_NUM) {
+                child.genome.push_back(gA);
+                ++iA;
+            }
+            else {
+                child.genome.push_back(gB);
+                ++iB;
+            }
+            continue;
+        }
+        // Otherwise, genes are matching
 
         // Select a gene from one parent randomly
         child.genome.push_back(RandUtil::randCoinFlip() ? gA : gB);
@@ -441,31 +455,9 @@ Genome_s Genome_s::crossover(const Genome_s &pA, const Genome_s &pB) {
                 POOL.PARAMETERS.reproduction.crossover.keep_disabled_connection
             );
         }
-    }
 
-    NodeID_t iA=MATCHING_COUNT, iB=MATCHING_COUNT;
-    bool A_has_excess;
-
-    // Copy disjoint genes
-    while (true) {
-        if (iA >= pA.getGenomeSize()) {
-            A_has_excess = false;
-            break;
-        }
-        if (iB >= pB.getGenomeSize()) {
-            A_has_excess = true;
-            break;
-        }
-
-        // Add genes one at a time, in order of innovation number
-        if (INNOV_NUM(pA, iA) < INNOV_NUM(pB, iB)) {
-            child.genome.push_back(pA.genome[iA]);
-            ++iA;
-        }
-        else {
-            child.genome.push_back(pB.genome[iB]);
-            ++iB;
-        }
+        // Increment both indicies
+        ++iA; ++iB;
     }
 
     // Select parent that has excess
@@ -504,8 +496,10 @@ std::ostream& operator<<(std::ostream& out, const Genome_s& genome) {
 }
 
 void Genome_s::simplifiedPrint(std::ostream& out) const {
-    out << "Genome " << ID << ": ("
-        << PARENT_A << "x" << PARENT_B << ") {";
+    out << "Genome " << ID << ": (";
+    if (!IS_ERR(PARENT_A)) out << PARENT_A;
+    if (!IS_ERR(PARENT_B)) out << "x" << PARENT_B;
+    out << ") {";
     for (const auto& gene : genome) {
         out << gene.INNOVATION_NUM << ", ";
     }
