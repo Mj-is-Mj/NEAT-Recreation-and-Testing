@@ -33,10 +33,12 @@ void GenePool_s::clear() {
 bool GenePool_s::addGenome(const Genome_s genome, const GenomeID_t count) {
     if (&(genome.POOL) != this) return false;
 
-    for (GenomeID_t i = 0; i < count; ++i) {
+    gene_pool.emplace_back(genome);
+
+    for (GenomeID_t i = 1; i < count; ++i) {
         // Insignificant design decision: `genome` or `genome.duplicate()`?
         // Determines whether copies have the same or different IDs
-        gene_pool.emplace_back(genome.duplicate());
+        gene_pool.emplace_back(genome.clone());
     }
 
     return true;
@@ -380,6 +382,106 @@ void Genome_s::mutate() {
 }
 
 
+Genome_s Genome_s::makeMutatedClone(const Genome_s &parent) {
+    Genome_s clone = parent.clone();
+    clone.mutate();
+    return clone;
+}
+
+
+// There was a misinterpretation I had: I had thought that 
+// Matching, Disjoint, and Excess genes formed contiguous blocks,
+// when you can actually have Disjoint genes sitting between Matching
+// genes
+Genome_s Genome_s::crossover(const Genome_s &pA, const Genome_s &pB) {
+    #define INNOV_NUM(G,i) (G.genome[i].INNOVATION_NUM)
+
+    assert(&(pA.POOL) == &(pB.POOL));
+    const GenePool_s& POOL = pA.POOL;
+
+    // Generate child with no genome
+    Genome_s child = Genome_s(
+        POOL, POOL.getNextGenomeNumber(), 
+        pA.ID, pB.ID,
+        std::max(pA.node_count, pB.node_count),
+         {}
+    );
+
+    GeneID_t gi = 0;
+
+    // While `gi` refers to matching genes between the two parents
+    while (
+        gi < pA.getGenomeSize() && gi < pB.getGenomeSize()
+        && INNOV_NUM(pA,gi) == INNOV_NUM(pB,gi)
+    ) {
+        ++gi;
+    }
+
+    const NodeID_t MATCHING_COUNT = gi;
+    const NodeID_t GENOME_SIZE = pA.getGenomeSize() + pB.getGenomeSize() - MATCHING_COUNT;
+    child.genome.reserve(GENOME_SIZE);
+
+    // Copy all matching genes
+    for (gi = 0; gi < MATCHING_COUNT; ++gi) {
+        const Gene_s& gA = pA.genome[gi];
+        const Gene_s& gB = pB.genome[gi];
+
+        // Select a gene from one parent randomly
+        child.genome.push_back(RandUtil::randCoinFlip() ? gA : gB);
+
+        // "There was a 75% chance that an inherited gene was disabled if 
+        // it was disabled in either parent." 
+        // I'm not sure if "was disabled" means "the result was a disabled gene"
+        // or "was disabled through an added chance to disable". I'm also not 
+        // sure if "either" is exclusive or inclusive, 
+        // I interpretted this as the probability of the result and an exclusive 
+        // "either" respectively. 
+        if (gA.enabled ^ gB.enabled) {
+            child.genome.back().enabled = ! RandUtil::randProb(
+                POOL.PARAMETERS.reproduction.crossover.keep_disabled_connection
+            );
+        }
+    }
+
+    NodeID_t iA=MATCHING_COUNT, iB=MATCHING_COUNT;
+    bool A_has_excess;
+
+    // Copy disjoint genes
+    while (true) {
+        if (iA >= pA.getGenomeSize()) {
+            A_has_excess = false;
+            break;
+        }
+        if (iB >= pB.getGenomeSize()) {
+            A_has_excess = true;
+            break;
+        }
+
+        // Add genes one at a time, in order of innovation number
+        if (INNOV_NUM(pA, iA) < INNOV_NUM(pB, iB)) {
+            child.genome.push_back(pA.genome[iA]);
+            ++iA;
+        }
+        else {
+            child.genome.push_back(pB.genome[iB]);
+            ++iB;
+        }
+    }
+
+    // Select parent that has excess
+    const Genome_s& pE = A_has_excess ? pA : pB;
+    NodeID_t& iE = A_has_excess ? iA : iB;
+
+    // Copy excess
+    for (/*iE*/; iE < pE.getGenomeSize(); ++iE) {
+        child.genome.push_back(pE.genome[iE]);
+    }
+
+    return child;
+
+    #undef INNOV_NUM
+}
+
 
 std::ostream& operator<<(std::ostream& out, const Genome_s& genome) {
     out << "Genome " << genome.ID << ": {" << std::endl
@@ -402,7 +504,8 @@ std::ostream& operator<<(std::ostream& out, const Genome_s& genome) {
 }
 
 void Genome_s::simplifiedPrint(std::ostream& out) const {
-    out << "Genome " << ID << ": {";
+    out << "Genome " << ID << ": ("
+        << PARENT_A << "x" << PARENT_B << ") {";
     for (const auto& gene : genome) {
         out << gene.INNOVATION_NUM << ", ";
     }

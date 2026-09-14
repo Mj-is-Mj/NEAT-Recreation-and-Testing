@@ -1,4 +1,6 @@
 #include "../inc/NEAT.hpp"
+#include "randutil.hpp"
+#include <cstdlib>
 
 using namespace NEAT;
 
@@ -55,6 +57,55 @@ void testMakeGenePoolAndMutate(NodeID_t in, NodeID_t out, bool bias, Parameters_
     std::cout << pool;
 }
 
+void testCrossover(NodeID_t in, NodeID_t out, bool bias, Parameters_s params) {
+    GenePool_s pool(
+        in, out, bias,
+        params,
+        evaluateNetwork
+    );
+
+    const Genome_s genome1 = pool.makeGenome(true);
+    pool.addGenome(genome1, 4);
+
+    std::cout << pool;
+
+    for (size_t i = 0; i < 10; ++i) {
+        for (auto& genome : pool.gene_pool) {
+            genome.mutate();
+        }
+    }
+
+    std::cout << pool;
+
+    for (size_t i = 0; i < 10; ++i) {
+        const Genome_s A = pool.gene_pool[RandUtil::randUpTo(pool.gene_pool.size())];
+        const Genome_s B = pool.gene_pool[RandUtil::randUpTo(pool.gene_pool.size())];
+        const Genome_s CHILD = Genome_s::crossover(A,B);
+
+        GeneID_t prev_innov = 0;
+        for (const auto& gene : CHILD.genome) {
+            if (prev_innov < gene.INNOVATION_NUM) {
+                prev_innov = gene.INNOVATION_NUM;
+                continue;
+            }
+
+            if (prev_innov == gene.INNOVATION_NUM && prev_innov == 0) {
+                continue;
+            }
+
+            std::cout << pool;
+
+            CHILD.simplifiedPrint(std::cout); std::cout << std::endl;
+            fflush(stdout);
+            exit(EXIT_FAILURE);
+        }
+
+        pool.addGenome(CHILD);
+    }
+
+    std::cout << pool;
+}
+
 int main() {
     params_more_mutations.reproduction.mutation.rates = {
         .add_node = 0.3,
@@ -66,5 +117,6 @@ int main() {
     };
 
     // testMakeGenome();
-    testMakeGenePoolAndMutate(2,2,true,params_more_mutations);
+    // testMakeGenePoolAndMutate(2,2,true,params_more_mutations);
+    testCrossover(2,2,true,params_more_mutations);
 }

@@ -286,7 +286,8 @@ struct Genome_s {
     Float_t fitness;
     std::vector<Gene_s> genome;
 
-    /// Constructors ///
+
+    /// CONSTRUCTORS ///
     // Copy constructor
     Genome_s(const Genome_s& other);
     // Parameter-based constructor
@@ -299,8 +300,9 @@ struct Genome_s {
     Genome_s(const GenePool_s& pool, const bool fully_connect = false);
     // Returns a genome that is an identical child of another genome
     // Distinct from the copy constructor since it has a different ID
-    inline Genome_s duplicate() const
+    inline Genome_s clone() const
         { return Genome_s(POOL, POOL.getNextGenomeNumber(), ID, ERR_VAL<NodeID_t>(), node_count, genome); }
+
 
     /// GETTERS ///
     // Counts/sizes
@@ -350,6 +352,10 @@ struct Genome_s {
     void mutateSetRandomWeight();
     void mutatePerturbWeight();
     void mutate();
+
+    /// REPRODUCTION ///
+    static Genome_s makeMutatedClone(const Genome_s& parent);
+    static Genome_s crossover(const Genome_s& pA, const Genome_s& pB);
     
     /// ALIASES ///
     // Calls to `GenePool` member functions
