@@ -57,6 +57,68 @@ void testMakeGenePoolAndMutate(NodeID_t in, NodeID_t out, bool bias, Parameters_
     std::cout << pool;
 }
 
+void printCompatibilityDistanceTable(const GenePool_s& pool) {
+    const size_t N = pool.gene_pool.size();
+
+    GenomeID_t max_dist_A = 0;
+    GenomeID_t max_dist_B = 0;
+    Float_t max_dist = 0;
+
+    GenomeID_t min_dist_A = 0;
+    GenomeID_t min_dist_B = 0;
+    Float_t min_dist = 1e10;
+
+    // XX.YY
+    #define FFORMAT "%5.2f"
+    #define DFORMAT "%5ld"
+    #define BFORMAT "-----"
+
+    printf("|-" BFORMAT "-");
+    for (size_t i = 0; i < N; ++i)
+        printf("| " DFORMAT " ", pool.gene_pool[i].ID);
+    printf("|\n");
+
+    for (size_t i = 0; i < N; ++i) {
+        for (size_t j = 0; j < N+1; ++j)
+            printf("|-" BFORMAT "-");
+        printf("|\n");
+
+        printf("| " DFORMAT, pool.gene_pool[i].ID);
+        for (size_t j = 0; j < N; ++j) {
+            Float_t dist = Genome_s::compatibilityDistance(
+                pool.gene_pool[i],
+                pool.gene_pool[j]
+            );
+            printf(" | " FFORMAT, dist);
+
+            if (dist > max_dist) {
+                max_dist = dist;
+                max_dist_A = pool.gene_pool[i].ID;
+                max_dist_B = pool.gene_pool[j].ID;
+            }
+
+            if (dist > 0 && dist < min_dist) {
+                min_dist = dist;
+                min_dist_A = pool.gene_pool[i].ID;
+                min_dist_B = pool.gene_pool[j].ID;
+            }
+        }
+        printf(" |\n");
+    }
+
+    for (size_t j = 0; j < N+1; ++j)
+        printf("|-" BFORMAT "-");
+    printf("|\n");
+
+
+    printf("Maximum distance of %.5f found between genomes %ld and %ld\n",
+        max_dist, max_dist_A, max_dist_B
+    );
+    printf("Minimum nonzero distance of %.5f found between genomes %ld and %ld\n",
+        min_dist, min_dist_A, min_dist_B
+    );
+}
+
 void validateCrossover(const Genome_s& pA, const Genome_s& pB, const Genome_s& child) {
 
     // Get all parental innovations
@@ -158,6 +220,8 @@ void testCrossover(NodeID_t in, NodeID_t out, bool bias, Parameters_s params) {
     }
 
     std::cout << pool;
+
+    printCompatibilityDistanceTable(pool);
 }
 
 int main() {

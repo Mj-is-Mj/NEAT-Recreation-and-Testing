@@ -473,6 +473,67 @@ Genome_s Genome_s::crossover(const Genome_s &pA, const Genome_s &pB) {
     #undef INNOV_NUM
 }
 
+Float_t Genome_s::compatibilityDistance(const Genome_s& A, const Genome_s& B) {
+    #define INNOV_NUM(G,i) (G.genome[i].INNOVATION_NUM)
+    assert(&(A.POOL) == &(B.POOL));
+
+    GenomeID_t disjoint=0, matching=0;
+    Float_t weight_diff = 0;
+
+    GenomeID_t iA=0, iB=0;
+    while (iA < A.getGenomeSize() && iB < B.getGenomeSize()) {
+
+        // If disjoint
+        if (INNOV_NUM(A,iA) != INNOV_NUM(B,iB)) {
+            // Increment index of lowest innovation number
+            if (INNOV_NUM(A,iA) < INNOV_NUM(B,iB))
+                ++iA;
+            else
+                ++iB;
+
+            ++disjoint;
+            continue;
+        }
+        // Otherwise matching
+
+        // Add weight difference
+        weight_diff += std::abs(
+            (Float_t)(A.genome[iA].weight)
+            - (Float_t)(B.genome[iB].weight)
+        );
+
+        // Increment both indicies
+        ++iA; ++iB;
+
+        ++matching;
+    }
+
+    #undef INNOV_NUM
+    
+    /* 
+    For arbitrary genomes C,D:
+    `C.size == C.matching(D) + C.disjoint(D) + C.excess(D)`  
+    So `C.excess(D) + D.excess(C) ==  
+          C.size + D.size 
+        - C.matching(D) + D.matching(C) 
+        - C.disjoint(D) + D.disjoint(C)`  
+    Since `matching == C.matching(D) == D.matching(C)` 
+    and `disjoint == C.disjoint(D) + D.disjoint(C)`, the
+    formula below holds. 
+    */
+    const GenomeID_t excess = A.getGenomeSize() + B.getGenomeSize() - (2*matching + disjoint);
+    const GenomeID_t N = std::max(A.getGenomeSize(), B.getGenomeSize());
+
+    if (matching > 0)
+        weight_diff /= matching;
+    else
+        weight_diff = 0;
+
+    const auto& CDF = A.POOL.PARAMETERS.cdf;    
+
+    return ((CDF.c1*excess + CDF.c2*disjoint) / N) + CDF.c3*weight_diff;
+}
+
 
 std::ostream& operator<<(std::ostream& out, const Genome_s& genome) {
     out << "Genome " << genome.ID << ": {" << std::endl

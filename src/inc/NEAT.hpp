@@ -13,9 +13,9 @@ namespace NEAT {
 
 struct Parameters_s;
 struct GenePool_s;
+struct Species_s;
 struct Gene_s;
 struct Genome_s;
-struct Species_s;
 
     // TYPEDEFS: Used to avoid ambiguity of different number types
     // E.g. `NodeID_t` will only ever be used in relation to nodes, 
@@ -244,6 +244,27 @@ struct GenePool_s {
     void printNode(std::ostream& out, const NodeID_t n) const;
 };
 
+// A single species within a `GenePool`
+struct Species_s {
+    const SpeciesID_t ID;
+    GenerationID_t last_living_generation;
+    // The maximum fitness seen in the species across all generations
+    Float_t cumulative_max_fitness;
+    // The maximum fitness of the current generation
+    Float_t current_max_fitness;
+    // The average fitness of the current generation
+    Float_t current_avg_fitness;
+    // The shared fitness of the current generation
+    Float_t current_shared_fitness;
+    // How many generations since the last imrpovement to `cumulative_max_fitness`
+    GenerationID_t staleness;
+    // Set to false when a species goes extinct
+    bool allowed_to_reproduce;
+
+    // The IDs of the genomes of all members of the species
+    std::vector<GenomeID_t> members;
+};
+
 // A single gene representing a connection
 struct Gene_s {
     const GeneID_t INNOVATION_NUM;
@@ -369,6 +390,7 @@ struct Genome_s {
     /// REPRODUCTION ///
     static Genome_s makeMutatedClone(const Genome_s& parent);
     static Genome_s crossover(const Genome_s& pA, const Genome_s& pB);
+    static Float_t compatibilityDistance(const Genome_s& A, const Genome_s& B);
     
     /// ALIASES ///
     // Calls to `GenePool` member functions
@@ -395,26 +417,6 @@ struct Genome_s {
     friend std::ostream& operator<<(std::ostream& out, const Genome_s& genome);
     void simplifiedPrint(std::ostream& out) const;
     inline void printNode(std::ostream& out, const NodeID_t n) const { POOL.printNode(out, n); }
-};
-
-// A single species within a `GenePool`
-struct Species_s {
-    const SpeciesID_t ID;
-    // The maximum fitness seen in the species across all generations
-    Float_t cumulative_max_fitness;
-    // The maximum fitness of the current generation
-    Float_t current_max_fitness;
-    // The average fitness of the current generation
-    Float_t current_avg_fitness;
-    // The shared fitness of the current generation
-    Float_t current_shared_fitness;
-    // How many generations since the last imrpovement to `cumulative_max_fitness`
-    GenerationID_t staleness;
-    // Set to false when a species goes extinct
-    bool allowed_to_reproduce;
-
-    // The IDs of the genomes of all members of the species
-    std::vector<GenomeID_t> members;
 };
 
 
