@@ -26,6 +26,11 @@ inline num_t randUpTo(const num_t n) {
     return (num_t)(rand30()) % n;
 }
 
+template<typename list_t>
+inline auto randFrom(const list_t& l) {
+    return l[l.size() % rand30()];
+}
+
 // Returns a random number in the range (s,e]
 template<typename num_t>
 inline num_t randRange(const num_t s, const num_t e) {
@@ -62,10 +67,23 @@ inline count_t randCount(const float_t avg_count) {
 // Generates a pair of unique integers in [0,`range`)
 template<typename count_t>
 inline void randUniquePair(count_t& a, count_t& b, const count_t range) {
+    assert(range > 1);
+
     a = (count_t)rand30() % range;
     b = (count_t)rand30() % (range-1);
 
     if (b >= a) ++b;
+}
+
+// Returns an interger in [0,`range`) not equal to `a`
+// I.e. completes the unique pair (`a`,x) in [0,`range`)
+template<typename count_t>
+inline count_t randCompleteUniquePair(const count_t a, const count_t range) {
+    assert(range > 1);
+
+    count_t b = (count_t)rand30() % (range-1);
+    if (b >= a) ++b;
+    return b;
 }
 
 // Generates a random pair of integers with distinct but overlapping ranges

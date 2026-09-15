@@ -1,5 +1,6 @@
 #include "../inc/NEAT.hpp"
 #include "../inc/randutil.hpp"
+#include <vector>
 
 // Repeat connections are not allowed to be added from "add connection"
 // mutations. However, given N nodes, there are nearly N^2 possible connections,
@@ -59,6 +60,343 @@ NodeID_t GenePool_s::getRandomOutputNodeID() const {
     );
 }
 
+void GenePool_s::updateSpeciesStats() {
+    Float_t sum_avg_fitnesss = 0;
+
+    for (Species_s& spec : species) {
+        // Skip extinct species
+        if (spec.extinct) {
+            continue;
+        }
+        if (spec.getPopSize() <= 0) {
+            spec.extinct = true;
+            continue;
+        }
+
+        bool reset_staleness = false;
+        spec.current_max_fitness = 0;
+        spec.current_avg_fitness = 0;
+        spec.allotted_offspring = ERR_VAL<GenomeID_t>();
+
+        for (const GenomeID_t gid : spec.members) {
+            const Genome_s& genome = gene_pool[gid];
+
+            // Update max fitness values
+            if (genome.fitness > spec.current_max_fitness) {
+                spec.current_max_fitness = genome.fitness;
+                if (genome.fitness > spec.cumulative_max_fitness) {
+                    spec.cumulative_max_fitness = genome.fitness;
+                    reset_staleness = true;
+                }
+            }
+
+            // Add to average
+            spec.current_avg_fitness += genome.fitness;
+        }
+
+        // Correct average fitness
+        spec.current_avg_fitness /= (Float_t)(spec.getPopSize());
+
+        // Update stalenss
+        if (reset_staleness)
+            spec.staleness = 0;
+        else
+            ++spec.staleness;
+
+        // If too stale, mark for extinction
+        if (spec.staleness > PARAMETERS.stagnation.species_stagnation_limit) {
+            spec.extinct = true;
+            continue;
+        }
+
+        // Add to average fitness only if not extinct
+        sum_avg_fitnesss += spec.current_avg_fitness;
+    }
+
+    /*
+    The allotted offspring of a species is proportional to its shared
+    fitness: `allotted = population_size * shared_fitness / total_shared_fitness`  
+    
+    The shared fitness of a species is simply the sum of shared fitnesses
+    of its members. The shared fitness of an organism is the fitness divided
+    by the number of organisms in the species, which is the average fitness of
+    the species. However, one caveat:
+
+    On page 13, formula (2) denotes the adjusted fitness function for an organism
+    `i` as `f_i`, and defines `f_i` as being the fitness function `f` divided by 
+    the summation of all organims whose compatibility distance is below the paramterized
+    threshold. However, the author states that this summation "reduces to the number 
+    of organisms in the same species as organism i", which is only guaranteed to be
+    true if `i` has an identical genome to the representative of the species. 
+    
+    Imagine a case with a representative `g`, and two very similar genomes `i` and `j`, where
+    `i`'s distance from `g` is just below the required threshold, and `j`'s is just 
+    above, meaning despite similarity, `i` is placed into `g`'s species and `j` is not. 
+    In this case, the distance between `i` and `j` is negligable, yet they are not in the
+    same species. Compatiblity distance determines if two organisms are similar enough to
+    be in the same species, but not whether or not they actually are. Note that it is 
+    explicitly stated that species do not overlap. 
+    */
+    for (Species_s& spec : species) {
+        if (spec.extinct) continue;
+
+        spec.allotted_offspring = std::max((Float_t)0,
+            PARAMETERS.population_size
+            * (spec.current_avg_fitness / sum_avg_fitnesss)
+        );
+
+        if (spec.allotted_offspring < 1)
+            spec.extinct = true;
+    }
+}
+
+void GenePool_s::evaluatePopulation() {
+    if (has_been_evaluated) return;
+
+    for (Genome_s& genome : gene_pool) {
+        genome.evaluate();
+    }
+
+    has_been_evaluated = true;
+}
+
+void GenePool_s::cullStaleSpecies() {
+    auto sitr = species.begin();
+
+    while (sitr != species.end()) {
+        if ((*sitr).extinct)
+            species.erase(sitr);
+        else
+            ++sitr;
+    }
+}
+
+void GenePool_s::cullFromSpecies(Species_s& spec) {
+    struct SortIDsByFitness_s {
+        const std::vector<Genome_s>& POOL;
+
+        inline SortIDsByFitness_s(const std::vector<Genome_s>& POOL)
+            : POOL(POOL)
+        {}
+
+        bool operator()(const GenomeID_t& lhs, const GenomeID_t& rhs) {
+            const Genome_s& lhsg = POOL[lhs];
+            const Genome_s& rhsg = POOL[rhs];
+            return lhsg.getFitness() > rhsg.getFitness();
+        }
+    };
+
+    const Float_t& CULL_RATIO = PARAMETERS.reproduction.cull_ratio;
+
+    // Get list of genome IDs sorted by fitness
+    std::list<GenomeID_t> sorted_genomes(spec.members.begin(), spec.members.end());
+    sorted_genomes.sort(SortIDsByFitness_s(gene_pool));
+
+    const GenomeID_t SURV_COUNT = sorted_genomes.size() * (1.0 - CULL_RATIO);
+
+    // Remove lowest-performers
+    auto itr = sorted_genomes.begin();
+    std::advance(itr, SURV_COUNT);
+    sorted_genomes.erase(itr, sorted_genomes.end());
+
+    // Copy update member list into species
+    spec.members.clear();
+    spec.members = std::vector<GenomeID_t>(
+        sorted_genomes.begin(), 
+        sorted_genomes.end()
+    );
+}
+
+void GenePool_s::cullFromSpecies() {
+    for (auto& spec : species)
+        cullFromSpecies(spec);
+}
+
+void GenePool_s::reproduce(
+        const Species_s& spec, 
+        const std::vector<GenomeID_t>& interspecies_pool,
+        std::vector<Genome_s>& child_gene_pool
+) {
+    const Float_t& CROSSOVER_PROPORTION = PARAMETERS.reproduction.crossover_proportion;
+    const Float_t& INTERSPECIES_RATE = PARAMETERS.reproduction.crossover.interspecies_mating_rate;
+    
+    // Validate species
+    if (
+        spec.extinct 
+        || spec.allotted_offspring < 1
+        || IS_ERR(spec.allotted_offspring)
+        || spec.allotted_offspring > PARAMETERS.population_size
+        || spec.getPopSize() < 1
+    ) {
+        return;
+    }
+
+    // Create shuffled version of the ID list
+    std::vector<GenomeID_t> member_ids(spec.members);
+    GenomeID_t a,b;
+    for (GenomeID_t i = 1; i < member_ids.size(); ++i) {
+        RandUtil::randUniquePair(a,b,member_ids.size());
+        std::swap(member_ids[a], member_ids[b]);
+    }
+
+    // Whether or not the species can cross within itself
+    // I.e. false ==> only interspecies crossover is possible
+    const bool INTER_ONLY = spec.getPopSize() > 1;
+
+    // Indices for `gene_pool`
+    GenomeID_t iA=0,iB=0;
+    // Indices for `member_ids`
+    GenomeID_t miA,miB;
+    for (GenomeID_t i = 0; i < spec.allotted_offspring; ++i) {
+        miA = i % member_ids.size();
+        iA = member_ids[miA];
+
+        // If crossover
+        if (
+            (!INTER_ONLY || RandUtil::randProb(INTERSPECIES_RATE))
+            && RandUtil::randProb(CROSSOVER_PROPORTION)
+        ) {
+            // If interspecies crossover
+            if (INTER_ONLY || RandUtil::randProb(INTERSPECIES_RATE)) {
+                // Select randomly from any live species
+                iB = RandUtil::randFrom(interspecies_pool);
+            }
+            // If within this species
+            else {
+                // Select random other member of this species
+                miB = RandUtil::randCompleteUniquePair(miA, member_ids.size());
+                iB = member_ids[miB];
+            }
+
+            // Add crossover of selected organisms
+            child_gene_pool.push_back(
+                Genome_s::crossover(
+                    gene_pool[iA],
+                    gene_pool[iB]
+                )
+            );
+        }
+        // If mutation
+        else {
+            // Add a mutated clone of the selected organism
+            child_gene_pool.push_back(
+                gene_pool[iA].makeMutatedClone()
+            );
+        }
+    }
+}
+
+std::vector<Genome_s> GenePool_s::reproduce() {
+    // Vector to contain IDs for all genomes belonging to non-extinct species
+    std::vector<GenomeID_t> remaining_population;
+    remaining_population.reserve(
+        PARAMETERS.population_size
+        *PARAMETERS.reproduction.cull_ratio
+    );
+
+    // Copy GenomeIDs from each species
+    for (const auto& spec : species) {
+        if (spec.extinct) continue;
+
+        remaining_population.insert(
+            remaining_population.end(),
+            spec.members.begin(),
+            spec.members.end()
+        );
+    }
+
+    // Create child gene pool
+    std::vector<Genome_s> child_gene_pool;
+    child_gene_pool.reserve(PARAMETERS.population_size);
+
+    for (auto& spec : species) {
+        reproduce(
+            spec,
+            remaining_population,
+            child_gene_pool
+        );
+    }
+
+    return std::move(child_gene_pool);
+}
+
+void GenePool_s::selectRepresentatives() {
+    for (Species_s& spec : species) {
+        spec.representative = RandUtil::randFrom(spec.members);
+    }
+}
+
+void GenePool_s::takeNewMembers(
+    Species_s& spec, 
+    std::list<GenomeID_t>& remaining_child_genome_ids,
+    const std::vector<Genome_s>& child_gene_pool
+) {
+    const Genome_s& REP = spec.getRepresentative();
+    const Float_t& THRESH = PARAMETERS.cdf.distance_thresh;
+
+    spec.members.clear();
+
+    auto citr = remaining_child_genome_ids.begin();
+    Float_t dist;
+
+    while (citr != remaining_child_genome_ids.end()) {
+        const Genome_s& child = child_gene_pool[*citr];
+        dist = Genome_s::compatibilityDistance(REP, child);
+
+        if (dist < THRESH) {
+            spec.members.push_back(*citr);
+            remaining_child_genome_ids.erase(citr);
+        }
+        else {
+            ++citr;
+        }
+    }
+}
+
+void GenePool_s::speciate(const std::vector<Genome_s>& child_gene_pool) {
+    std::list<GenomeID_t> remaining_child_genome_ids;
+    for (GenomeID_t i = 0; i < child_gene_pool.size(); ++i)
+        remaining_child_genome_ids.push_back(i);
+
+    // Take members for each existing species
+    for (auto& spec : species) {
+        takeNewMembers(
+            spec,
+            remaining_child_genome_ids,
+            child_gene_pool
+        );
+    }
+
+    while ( ! remaining_child_genome_ids.empty()) {
+        // Create new species with the next child as a representative
+        Species_s& new_spec = species.emplace_back(*this);
+        new_spec.representative = remaining_child_genome_ids.front();
+        remaining_child_genome_ids.pop_front();
+
+        // Take members for the new species
+        takeNewMembers(
+            new_spec,
+            remaining_child_genome_ids,
+            child_gene_pool
+        );
+    }
+}
+
+void GenePool_s::newGeneration() {
+    if (!has_been_evaluated) evaluatePopulation();
+
+    cullStaleSpecies();
+    updateSpeciesStats();
+    cullFromSpecies();
+    updateSpeciesStats();
+
+    auto child_gene_pool = reproduce();
+
+    speciate(child_gene_pool);
+
+    gene_pool = std::move(child_gene_pool);
+}
+
 NodeType_e GenePool_s::getNodeType(const NodeID_t n) const {
     if (isInputNode(n)) {
         return NodeType_e::INPUT;   
@@ -107,7 +445,7 @@ std::ostream& operator<<(std::ostream& out, const GenePool_s& pool) {
 
     for (const auto& spec : pool.species) {
         out << "Species " << spec.ID << ": {" << std::endl
-            << "\tExitinct:        " << (spec.allowed_to_reproduce ? "no" : "yes") << std::endl
+            << "\tExitinct:        " << (spec.extinct ? "no" : "yes") << std::endl
             << "\tMAX Fitness OAT: " << spec.cumulative_max_fitness << std::endl
             << "\tCurrent Max Fit: " << spec.current_max_fitness<< std::endl
             << "\tCurrent Avg Fit: " << spec.current_avg_fitness << std::endl
@@ -137,6 +475,7 @@ std::ostream& operator<<(std::ostream& out, const GenePool_s& pool) {
 }
 
 
+
 /// GENE ///
 std::ostream& operator<<(std::ostream& out, const Gene_s& gene) {
     out << gene.INNOVATION_NUM << ": {";
@@ -146,6 +485,8 @@ std::ostream& operator<<(std::ostream& out, const Gene_s& gene) {
     out << (gene.enabled ? "enab" : "disb") << "}";
     return out;
 }
+
+
 
 /// GENOME ///
 Genome_s::Genome_s(const GenePool_s& pool, const bool fully_connect) 
@@ -513,7 +854,7 @@ Float_t Genome_s::compatibilityDistance(const Genome_s& A, const Genome_s& B) {
     /* 
     For arbitrary genomes C,D:
     `C.size == C.matching(D) + C.disjoint(D) + C.excess(D)`  
-    So `C.excess(D) + D.excess(C) ==  
+    So `C.excess(D) + D.excess(C) == 
           C.size + D.size 
         - C.matching(D) + D.matching(C) 
         - C.disjoint(D) + D.disjoint(C)`  
@@ -532,6 +873,11 @@ Float_t Genome_s::compatibilityDistance(const Genome_s& A, const Genome_s& B) {
     const auto& CDF = A.POOL.PARAMETERS.cdf;    
 
     return ((CDF.c1*excess + CDF.c2*disjoint) / N) + CDF.c3*weight_diff;
+}
+
+Float_t Genome_s::evaluate() {
+    fitness = POOL.EVALUATE_GENOME(*this);
+    return fitness;
 }
 
 

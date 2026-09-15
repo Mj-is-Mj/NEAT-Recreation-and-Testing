@@ -242,27 +242,107 @@ struct GenePool_s {
     /// DEBUGGING ///
     friend std::ostream& operator<<(std::ostream& out, const GenePool_s& pool);
     void printNode(std::ostream& out, const NodeID_t n) const;
+
+    /// CULLING ///
+    void evaluatePopulation();
+    void updateSpeciesStats();
+    void cullStaleSpecies();
+    void cullFromSpecies(Species_s& spec);
+    void cullFromSpecies();
+
+    // REPRODUCTION AND SPECIATION///
+    void reproduce(
+        const Species_s& spec, 
+        const std::vector<GenomeID_t>& interspecies_pool,
+        std::vector<Genome_s>& child_gene_pool
+    );
+    std::vector<Genome_s> reproduce();
+    void selectRepresentatives();
+    void takeNewMembers(
+        Species_s& spec, 
+        std::list<GenomeID_t>& remaining_child_genome_ids,
+        const std::vector<Genome_s>& child_gene_pool
+    );
+    void speciate(const std::vector<Genome_s>& child_gene_pool);
+
+    /// "MAIN" FUNCTION ///
+    void newGeneration();
 };
 
 // A single species within a `GenePool`
 struct Species_s {
+    const GenePool_s& POOL;
     const SpeciesID_t ID;
+    // The last generation when the species was alive and evaluated
     GenerationID_t last_living_generation;
     // The maximum fitness seen in the species across all generations
     Float_t cumulative_max_fitness;
     // The maximum fitness of the current generation
     Float_t current_max_fitness;
     // The average fitness of the current generation
+    // This is also the shared fitness of the species
     Float_t current_avg_fitness;
-    // The shared fitness of the current generation
-    Float_t current_shared_fitness;
+    // The number of offspring allocated to this species
+    GenomeID_t allotted_offspring;
     // How many generations since the last imrpovement to `cumulative_max_fitness`
     GenerationID_t staleness;
-    // Set to false when a species goes extinct
-    bool allowed_to_reproduce;
+    // Representative when speciating (index for `POOL.gene_pool`)
+    GenomeID_t representative;
+    // Self-explanitory
+    bool extinct;
 
     // The IDs of the genomes of all members of the species
     std::vector<GenomeID_t> members;
+
+    template<typename... GenomeID_tmp>
+    inline Species_s(const GenePool_s& POOL, const GenomeID_tmp... genome_ids)
+            : POOL(POOL)
+            , ID(POOL.getNextSpeciesNumber())
+            , last_living_generation(POOL.generation_num)
+            , cumulative_max_fitness(0)
+            , current_max_fitness(0)
+            , current_avg_fitness(0)
+            , staleness(0)
+            , representative(ERR_VAL<GenomeID_t>())
+            , members{genome_ids...}
+            , extinct(false)
+    {}
+
+    template<typename MemberList_tmp>
+    inline Species_s(const GenePool_s& POOL, MemberList_tmp& new_members)
+            : POOL(POOL)
+            , ID(POOL.getNextSpeciesNumber())
+            , last_living_generation(POOL.generation_num)
+            , cumulative_max_fitness(0)
+            , current_max_fitness(0)
+            , current_avg_fitness(0)
+            , staleness(0)
+            , representative(ERR_VAL<GenomeID_t>())
+            , members(std::move(new_members))
+            , extinct(false)
+    {}
+
+    inline Species_s(const Species_s& other)
+            : POOL(other.POOL)
+            , ID(other.ID)
+            , last_living_generation(other.last_living_generation)
+            , cumulative_max_fitness(other.cumulative_max_fitness)
+            , current_max_fitness(other.current_max_fitness)
+            , current_avg_fitness(other.current_avg_fitness)
+            , staleness(other.staleness)
+            , representative(other.representative)
+            , members(other.members)
+            , extinct(other.extinct)
+    {}
+
+    inline GenomeID_t getPopSize() const 
+        { return members.size(); }
+    inline GenomeID_t getRandomGenomeID() const 
+        { return members[RandUtil::randUpTo(members.size())]; }
+    inline void getRandomGenomeIDPair(GenomeID_t& a, GenomeID_t& b) const 
+        { return RandUtil::randUniquePair(a,b,members.size()); }
+    inline const Genome_s& getRepresentative() const
+        { return POOL.gene_pool[representative]; }
 };
 
 // A single gene representing a connection
@@ -390,7 +470,10 @@ struct Genome_s {
     /// REPRODUCTION ///
     static Genome_s makeMutatedClone(const Genome_s& parent);
     static Genome_s crossover(const Genome_s& pA, const Genome_s& pB);
+
+    /// METRICS ///
     static Float_t compatibilityDistance(const Genome_s& A, const Genome_s& B);
+    Float_t evaluate();
     
     /// ALIASES ///
     // Calls to `GenePool` member functions
@@ -412,6 +495,7 @@ struct Genome_s {
         { assert(hasBias()); addConnection(getBiasNode(), to, weight, enabled); }
     inline void mutateEnableConnection() { mutateSetConnection(true); };
     inline void mutateDisableConnection() { mutateSetConnection(false); };
+    inline Genome_s makeMutatedClone() { return makeMutatedClone(*this); }
     
     /// DEBUGGING ///
     friend std::ostream& operator<<(std::ostream& out, const Genome_s& genome);
