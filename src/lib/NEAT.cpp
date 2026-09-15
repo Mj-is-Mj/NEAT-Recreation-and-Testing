@@ -902,10 +902,15 @@ std::ostream& operator<<(std::ostream& out, const Genome_s& genome) {
 }
 
 void Genome_s::simplifiedPrint(std::ostream& out) const {
-    out << "Genome " << ID << ": (";
+    // ID + parents
+    out << "Genome " << ID << " (";
     if (!IS_ERR(PARENT_A)) out << PARENT_A;
     if (!IS_ERR(PARENT_B)) out << "x" << PARENT_B;
-    out << ") {";
+    out << "): ";
+
+    // Fitness
+    out.precision(5);
+    out << "Fit: " << fitness << ", {";
     for (const auto& gene : genome) {
         out << gene.INNOVATION_NUM << ", ";
     }
