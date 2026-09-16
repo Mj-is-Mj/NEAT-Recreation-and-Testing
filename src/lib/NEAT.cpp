@@ -167,11 +167,13 @@ void GenePool_s::evaluatePopulation() {
 }
 
 void GenePool_s::cullStaleSpecies() {
+    const GenerationID_t& STAG_LIMIT = PARAMETERS.stagnation.species_stagnation_limit;
+    
     auto sitr = species.begin();
 
     while (sitr != species.end()) {
-        if ((*sitr).extinct)
-            species.erase(sitr);
+        if ((*sitr).extinct || (*sitr).staleness > STAG_LIMIT)
+            sitr = species.erase(sitr);
         else
             ++sitr;
     }
@@ -214,8 +216,10 @@ void GenePool_s::cullFromSpecies(Species_s& spec) {
 }
 
 void GenePool_s::cullFromSpecies() {
-    for (auto& spec : species)
+    for (auto& spec : species) {
+        if (spec.extinct) continue;
         cullFromSpecies(spec);
+    }
 }
 
 void GenePool_s::reproduce(
@@ -281,8 +285,6 @@ void GenePool_s::reproduce(
                     gene_pool[iB]
                 )
             );
-
-            std::cout << "CROSSOVER" << std::endl;
         }
         // If mutation
         else {
@@ -318,6 +320,8 @@ std::vector<Genome_s> GenePool_s::reproduce() {
     child_gene_pool.reserve(PARAMETERS.population_size);
 
     for (auto& spec : species) {
+        if (spec.extinct) continue;
+
         reproduce(
             spec,
             remaining_population,
@@ -330,6 +334,7 @@ std::vector<Genome_s> GenePool_s::reproduce() {
 
 void GenePool_s::selectRepresentatives() {
     for (Species_s& spec : species) {
+        if (spec.extinct) continue;
         spec.representative = RandUtil::randFrom(spec.members);
     }
 }
@@ -353,7 +358,7 @@ void GenePool_s::takeNewMembers(
 
         if (dist < THRESH) {
             spec.members.push_back(*citr);
-            remaining_child_genome_ids.erase(citr);
+            citr = remaining_child_genome_ids.erase(citr);
         }
         else {
             ++citr;
@@ -380,6 +385,7 @@ void GenePool_s::speciate(const std::vector<Genome_s>& child_gene_pool) {
 
     // Take members for each existing species
     for (auto& spec : species) {
+        if (spec.extinct) continue;
         takeNewMembers(
             spec,
             remaining_child_genome_ids,
@@ -391,6 +397,7 @@ void GenePool_s::speciate(const std::vector<Genome_s>& child_gene_pool) {
         // Create new species with the next child as a representative
         Species_s& new_spec = species.emplace_back(*this);
         new_spec.representative = remaining_child_genome_ids.front();
+        new_spec.members.push_back(new_spec.representative);
         remaining_child_genome_ids.pop_front();
 
         // Take members for the new species
@@ -412,11 +419,12 @@ void GenePool_s::newGeneration() {
 
     updateSpeciesStats();
     cullStaleSpecies();
-    cullFromSpecies();
+    // cullFromSpecies();
     updateSpeciesStats();
 
     auto child_gene_pool = reproduce();
 
+    selectRepresentatives();
     speciate(child_gene_pool);
 
     gene_pool = std::move(child_gene_pool);
@@ -470,7 +478,7 @@ std::ostream& operator<<(std::ostream& out, const GenePool_s& pool) {
 
     for (const auto& spec : pool.species) {
         out << "Species " << spec.ID << ": {" << std::endl
-            << "\tExitinct:        " << (spec.extinct ? "no" : "yes") << std::endl
+            << "\tExitinct:        " << (spec.extinct ? "yes" : "no") << std::endl
             << "\tMAX Fitness OAT: " << spec.cumulative_max_fitness << std::endl
             << "\tCurrent Max Fit: " << spec.current_max_fitness<< std::endl
             << "\tCurrent Avg Fit: " << spec.current_avg_fitness << std::endl

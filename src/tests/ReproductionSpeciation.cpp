@@ -31,9 +31,9 @@ constexpr Parameters_s LOCAL_PARAMS {
     },
     .cdf = {
         .c1=1.0, .c2=1.0, .c3=0.4,
-        .distance_thresh = 3.0,
+        .distance_thresh = 1.0,
     },
-    .population_size = 10,
+    .population_size = 20,
 };
 
 Float_t evaluateNetwork(const Genome_s& genome) { return 0; }
@@ -52,11 +52,10 @@ int main() {
     pool.updateSpeciesStats();
     std::cout << pool;
 
-    auto children = pool.reproduce();
 
-    std::cout << pool;
-    for (const auto& child : children) {
-        child.simplifiedPrint(std::cout); 
-        std::cout << std::endl;
+    for (size_t i = 0; i < 10; ++i) {
+        pool.newGeneration();
+
+        std::cout << pool;
     }
 }

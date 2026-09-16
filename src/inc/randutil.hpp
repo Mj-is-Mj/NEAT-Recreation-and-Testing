@@ -28,7 +28,7 @@ inline num_t randUpTo(const num_t n) {
 
 template<typename list_t>
 inline auto randFrom(const list_t& l) {
-    return l[l.size() % rand30()];
+    return l[rand30() % l.size()];
 }
 
 // Returns a random number in the range (s,e]
