@@ -38,6 +38,9 @@ typedef size_t  GenerationID_t;
 // Returns the value denoted as an error for the above typedefs
 template<typename T>
 inline constexpr T ERR_VAL() { return ~(T{0}); }
+// ERR_VAL specifically for Float_t
+template<>
+inline constexpr Float_t ERR_VAL() { return (Float_t)(-1e38); };
 // Checks if value is an error
 template<typename T>
 inline constexpr bool IS_ERR(const T val) { return val == ERR_VAL<typeof(T)>(); }
@@ -263,6 +266,8 @@ struct GenePool_s {
         std::list<GenomeID_t>& remaining_child_genome_ids,
         const std::vector<Genome_s>& child_gene_pool
     );
+    // If there are no species, add all genomes to a new species
+    void forceSpeciate();
     void speciate(const std::vector<Genome_s>& child_gene_pool);
 
     /// "MAIN" FUNCTION ///
@@ -305,20 +310,6 @@ struct Species_s {
             , staleness(0)
             , representative(ERR_VAL<GenomeID_t>())
             , members{genome_ids...}
-            , extinct(false)
-    {}
-
-    template<typename MemberList_tmp>
-    inline Species_s(const GenePool_s& POOL, MemberList_tmp& new_members)
-            : POOL(POOL)
-            , ID(POOL.getNextSpeciesNumber())
-            , last_living_generation(POOL.generation_num)
-            , cumulative_max_fitness(0)
-            , current_max_fitness(0)
-            , current_avg_fitness(0)
-            , staleness(0)
-            , representative(ERR_VAL<GenomeID_t>())
-            , members(std::move(new_members))
             , extinct(false)
     {}
 

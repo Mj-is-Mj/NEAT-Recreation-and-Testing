@@ -140,10 +140,15 @@ void GenePool_s::updateSpeciesStats() {
     for (Species_s& spec : species) {
         if (spec.extinct) continue;
 
-        spec.allotted_offspring = std::max((Float_t)0,
-            PARAMETERS.population_size
-            * (spec.current_avg_fitness / sum_avg_fitnesss)
-        );
+        if (sum_avg_fitnesss <= 01e-30) {
+            spec.allotted_offspring = PARAMETERS.population_size / (Float_t)(species.size());
+        } 
+        else {
+            spec.allotted_offspring = std::max((Float_t)0,
+                PARAMETERS.population_size
+                * (spec.current_avg_fitness / sum_avg_fitnesss)
+            );
+        }
 
         if (spec.allotted_offspring < 1)
             spec.extinct = true;
@@ -152,6 +157,7 @@ void GenePool_s::updateSpeciesStats() {
 
 void GenePool_s::evaluatePopulation() {
     if (has_been_evaluated) return;
+    if (EVALUATE_GENOME == nullptr) return;
 
     for (Genome_s& genome : gene_pool) {
         genome.evaluate();
@@ -241,7 +247,7 @@ void GenePool_s::reproduce(
 
     // Whether or not the species can cross within itself
     // I.e. false ==> only interspecies crossover is possible
-    const bool INTER_ONLY = spec.getPopSize() > 1;
+    const bool INTER_ONLY = spec.getPopSize() < 2;
 
     // Indices for `gene_pool`
     GenomeID_t iA=0,iB=0;
@@ -253,8 +259,8 @@ void GenePool_s::reproduce(
 
         // If crossover
         if (
-            (!INTER_ONLY || RandUtil::randProb(INTERSPECIES_RATE))
-            && RandUtil::randProb(CROSSOVER_PROPORTION)
+            (!INTER_ONLY && RandUtil::randProb(CROSSOVER_PROPORTION))
+            || (INTER_ONLY && RandUtil::randProb(INTERSPECIES_RATE))
         ) {
             // If interspecies crossover
             if (INTER_ONLY || RandUtil::randProb(INTERSPECIES_RATE)) {
@@ -275,6 +281,8 @@ void GenePool_s::reproduce(
                     gene_pool[iB]
                 )
             );
+
+            std::cout << "CROSSOVER" << std::endl;
         }
         // If mutation
         else {
@@ -353,6 +361,18 @@ void GenePool_s::takeNewMembers(
     }
 }
 
+void GenePool_s::forceSpeciate() {
+    if (species.size() > 0) return;
+    if (gene_pool.size() < 1) return;
+
+    Species_s& spec = species.emplace_back(*this);
+    spec.members.reserve(gene_pool.size());
+
+    for (GenomeID_t i = 0; i < gene_pool.size(); ++i) {
+        spec.members.push_back(i);
+    }
+}
+
 void GenePool_s::speciate(const std::vector<Genome_s>& child_gene_pool) {
     std::list<GenomeID_t> remaining_child_genome_ids;
     for (GenomeID_t i = 0; i < child_gene_pool.size(); ++i)
@@ -383,10 +403,15 @@ void GenePool_s::speciate(const std::vector<Genome_s>& child_gene_pool) {
 }
 
 void GenePool_s::newGeneration() {
+    // Esnure there are genomes
+    if (gene_pool.size() < 1) return;
+    // If no species, place all genomes into one species to start
+    forceSpeciate();
+
     if (!has_been_evaluated) evaluatePopulation();
 
-    cullStaleSpecies();
     updateSpeciesStats();
+    cullStaleSpecies();
     cullFromSpecies();
     updateSpeciesStats();
 
@@ -876,6 +901,7 @@ Float_t Genome_s::compatibilityDistance(const Genome_s& A, const Genome_s& B) {
 }
 
 Float_t Genome_s::evaluate() {
+    if (POOL.EVALUATE_GENOME == nullptr) return ERR_VAL<Float_t>();
     fitness = POOL.EVALUATE_GENOME(*this);
     return fitness;
 }
