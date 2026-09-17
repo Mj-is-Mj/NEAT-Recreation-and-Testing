@@ -786,6 +786,7 @@ Genome_s Genome_s::crossover(const Genome_s &pA, const Genome_s &pB) {
 
     assert(&(pA.POOL) == &(pB.POOL));
     const GenePool_s& POOL = pA.POOL;
+    const Float_t& KDC = POOL.PARAMETERS.reproduction.crossover.keep_disabled_connection;
 
     // Generate child with no genome
     Genome_s child = Genome_s(
@@ -837,9 +838,16 @@ Genome_s Genome_s::crossover(const Genome_s &pA, const Genome_s &pB) {
         // I interpretted this as the probability of the result and an exclusive 
         // "either" respectively. 
         if (gA.enabled ^ gB.enabled) {
-            child.genome.back().enabled = ! RandUtil::randProb(
-                POOL.PARAMETERS.reproduction.crossover.keep_disabled_connection
-            );
+            Gene_s& gene = child.genome.back();
+
+            // Chance to disable if enabled
+            if (gene.enabled && KDC > 0.5) {
+                gene.enabled = RandUtil::randProb(2-2*KDC);
+            }
+            // Chance to enable if disabled
+            else if (!gene.enabled && KDC < 0.5) {
+                gene.enabled = RandUtil::randProb(1-2*KDC);
+            }
         }
 
         // Increment both indicies

@@ -11,6 +11,32 @@
 
 namespace NEAT {
 
+/*
+        ### CURRENTLY MISSING/QUESTIONABLE FUNCTIONALITY ###
+    
+    "In rare cases when the fitness of the entire population does not 
+    improve for more than 20 generations, only the top two species are 
+    allowed to reproduce, refocusing the search into the most promising 
+    spaces" (pg 13, fn 2). Parameters `population_stagnation_limit` and 
+    `minimum_species_count` are to be used for this functionality. One
+    concern, does "top two species" refer to the top two currently living 
+    species, or can it include previously extinct ones? I assume living-only.
+
+    "interspecies mating rate" (pg 15, pr 1). For simlification of
+    implementation, I opted to have inerspecies mating function by selecting
+    one member from within the species and one member from the entire gene pool. 
+    This means that it may still mate with a member of its own species, but
+    with a large enough population and species count this would be unlikely. 
+
+    "There was a 75% chance that an inherited gene was disabled if it was 
+    disabled in either parent" (pg 15, pr 1). The phrasing is slightly 
+    ambiguous, but I interpreted as "When a matching gene is inherited and exactly
+    one parent has the gene disabled, the resulting gene is disabled 75% of the time
+    (instead of 50% from regular inheritence). 
+
+*/
+
+
 struct Parameters_s;
 struct GenePool_s;
 struct Species_s;
@@ -146,8 +172,8 @@ constexpr Parameters_s DEFAULT_PARAMETERS {
     },
     .stagnation = {
         .species_stagnation_limit = 15,
-        .population_stagnation_limit = 20,
-        .minimum_species_count = 2,
+        .population_stagnation_limit = 20, // UNUSED
+        .minimum_species_count = 2, // UNUSED
     },
     .cdf = {
         .c1=1.0, .c2=1.0, .c3=0.4,
