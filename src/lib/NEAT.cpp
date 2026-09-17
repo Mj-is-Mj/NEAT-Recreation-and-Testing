@@ -73,7 +73,6 @@ void GenePool_s::updateSpeciesStats() {
             continue;
         }
 
-        bool reset_staleness = false;
         spec.current_max_fitness = 0;
         spec.current_avg_fitness = 0;
         spec.allotted_offspring = ERR_VAL<GenomeID_t>();
@@ -86,7 +85,7 @@ void GenePool_s::updateSpeciesStats() {
                 spec.current_max_fitness = genome.fitness;
                 if (genome.fitness > spec.cumulative_max_fitness) {
                     spec.cumulative_max_fitness = genome.fitness;
-                    reset_staleness = true;
+                    spec.last_improved_generation = this->generation_num;
                 }
             }
 
@@ -96,18 +95,6 @@ void GenePool_s::updateSpeciesStats() {
 
         // Correct average fitness
         spec.current_avg_fitness /= (Float_t)(spec.getPopSize());
-
-        // Update stalenss
-        if (reset_staleness)
-            spec.staleness = 0;
-        else
-            ++spec.staleness;
-
-        // If too stale, mark for extinction
-        if (spec.staleness > PARAMETERS.stagnation.species_stagnation_limit) {
-            spec.extinct = true;
-            continue;
-        }
 
         // Add to average fitness only if not extinct
         sum_avg_fitnesss += spec.current_avg_fitness;
@@ -166,16 +153,24 @@ void GenePool_s::evaluatePopulation() {
     has_been_evaluated = true;
 }
 
-void GenePool_s::cullStaleSpecies() {
+void GenePool_s::cullSpecies() {
     const GenerationID_t& STAG_LIMIT = PARAMETERS.stagnation.species_stagnation_limit;
     
     auto sitr = species.begin();
+    GenerationID_t staleness;
 
     while (sitr != species.end()) {
-        if ((*sitr).extinct || (*sitr).staleness > STAG_LIMIT)
+        auto& spec = *sitr;
+        staleness = this->generation_num - spec.last_improved_generation;
+
+        if (spec.extinct || staleness > STAG_LIMIT || spec.getPopSize() < 1) {
+            spec.extinct = true;
             sitr = species.erase(sitr);
-        else
+        }
+        else {
+            spec.last_living_generation = this->generation_num;
             ++sitr;
+        }
     }
 }
 
@@ -215,7 +210,7 @@ void GenePool_s::cullFromSpecies(Species_s& spec) {
     );
 }
 
-void GenePool_s::cullFromSpecies() {
+void GenePool_s::cullFromAllSpecies() {
     for (auto& spec : species) {
         if (spec.extinct) continue;
         cullFromSpecies(spec);
@@ -415,19 +410,34 @@ void GenePool_s::newGeneration() {
     // If no species, place all genomes into one species to start
     forceSpeciate();
 
-    if (!has_been_evaluated) evaluatePopulation();
+    if (!has_been_evaluated) {
+        evaluatePopulation();
+        updateSpeciesStats();
+    }
 
-    updateSpeciesStats();
-    cullStaleSpecies();
-    // cullFromSpecies();
+    // Cull
+    cullSpecies();
+    cullFromAllSpecies();
+
+    // Update again
     updateSpeciesStats();
 
+    // Produce next generation
     auto child_gene_pool = reproduce();
+    ++generation_num;
 
+    // Select representatives and get members for each species
     selectRepresentatives();
     speciate(child_gene_pool);
-
     gene_pool = std::move(child_gene_pool);
+    has_been_evaluated = false;
+
+    // Remove any empty species
+    cullSpecies();
+
+    // // Evaluate the new population
+    evaluatePopulation();
+    updateSpeciesStats();
 }
 
 NodeType_e GenePool_s::getNodeType(const NodeID_t n) const {
@@ -469,12 +479,14 @@ void GenePool_s::printNode(std::ostream& out, const NodeID_t n) const {
 }
 
 std::ostream& operator<<(std::ostream& out, const GenePool_s& pool) {
+    out << "CURRENT GENERATION: " << pool.generation_num << std::endl;
+    out << "Population size: " << pool.gene_pool.size() << std::endl;
+
     out << "Parameters {" << std::endl
         << "\tInputs:  " << pool.INPUT_NODE_COUNT << std::endl
         << "\tOutputs: " << pool.INPUT_NODE_COUNT << std::endl
         << "\tBais:    " << (pool.HAS_BIAS_NODE ? "present" : "absent")
         << std::endl << "}" << std::endl;
-
 
     for (const auto& spec : pool.species) {
         out << "Species " << spec.ID << ": {" << std::endl
@@ -482,12 +494,13 @@ std::ostream& operator<<(std::ostream& out, const GenePool_s& pool) {
             << "\tMAX Fitness OAT: " << spec.cumulative_max_fitness << std::endl
             << "\tCurrent Max Fit: " << spec.current_max_fitness<< std::endl
             << "\tCurrent Avg Fit: " << spec.current_avg_fitness << std::endl
-            << "\tStaleness:       " << spec.staleness << std::endl
+            << "\tAppear in gen:   " << spec.generation_of_inception << std::endl
+            << "\tLast Imprvd Gen: " << spec.last_improved_generation << std::endl
             << "\tMembers: {" << std::endl;
         for (const auto& gid : spec.members) {
             const auto& genome = pool.gene_pool[gid];
             out << "\t\t";
-            genome.simplifiedPrint(out);
+            genome.simplifiedPrint(out, (genome.getGenomeSize() < 25));
             out << ", " << std::endl;
         }
         out << "\t}" << std::endl
@@ -935,7 +948,7 @@ std::ostream& operator<<(std::ostream& out, const Genome_s& genome) {
     return out;
 }
 
-void Genome_s::simplifiedPrint(std::ostream& out) const {
+void Genome_s::simplifiedPrint(std::ostream& out, const bool print_genome) const {
     // ID + parents
     out << "Genome " << ID << " (";
     if (!IS_ERR(PARENT_A)) out << PARENT_A;
@@ -945,9 +958,11 @@ void Genome_s::simplifiedPrint(std::ostream& out) const {
     // Fitness
     out.precision(5);
     out << "Fit: " << fitness << ", {";
-    for (const auto& gene : genome) {
-        out << gene.INNOVATION_NUM << ", ";
-    }
+    if (print_genome)
+        for (const auto& gene : genome)
+            out << gene.INNOVATION_NUM << ", ";
+    else
+        out << "Size: " << genome.size(); 
     out << "}";
 }
 

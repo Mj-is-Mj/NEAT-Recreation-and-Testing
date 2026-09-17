@@ -1,5 +1,6 @@
 
 #include "../inc/NEAT.hpp"
+#include <cmath>
 using namespace NEAT;
 
 constexpr Parameters_s LOCAL_PARAMS {
@@ -31,12 +32,27 @@ constexpr Parameters_s LOCAL_PARAMS {
     },
     .cdf = {
         .c1=1.0, .c2=1.0, .c3=0.4,
-        .distance_thresh = 1.0,
+        .distance_thresh = 0.7,
     },
-    .population_size = 20,
+    .population_size = 50,
 };
 
-Float_t evaluateNetwork(const Genome_s& genome) { return 0; }
+Float_t evaluateNetwork(const Genome_s& genome) {
+    static constexpr Float_t A = 30;
+
+    Float_t connections = 0;
+    Float_t weights = 0;
+    for (const auto& gene : genome.genome) {
+        if (!gene.enabled) continue;
+        weights += std::abs(gene.weight);
+        connections += 1;
+    }
+    weights = std::sqrt(std::abs(weights));
+
+    #define EVAL(x,w) ((2*A*x) / ((x*x + A*A)*w + 0.1))
+    return connections / (10*weights + 0.1);
+    #undef EVAL
+}
 
 int main() {
     GenePool_s pool(
@@ -47,15 +63,17 @@ int main() {
 
     const Genome_s BASE(pool, true);
     pool.addGenome(BASE, 3);
-    pool.forceSpeciate();
-    pool.evaluatePopulation();
-    pool.updateSpeciesStats();
     std::cout << pool;
 
 
-    for (size_t i = 0; i < 10; ++i) {
+    for (size_t i = 0; i < 100; ++i) {
         pool.newGeneration();
 
-        std::cout << pool;
+        std::cout << pool << std::endl;
     }
+
+    pool.cullFromAllSpecies();
+    pool.updateSpeciesStats();
+
+    std::cout << pool << std::endl;
 }

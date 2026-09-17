@@ -249,9 +249,9 @@ struct GenePool_s {
     /// CULLING ///
     void evaluatePopulation();
     void updateSpeciesStats();
-    void cullStaleSpecies();
+    void cullSpecies();
     void cullFromSpecies(Species_s& spec);
-    void cullFromSpecies();
+    void cullFromAllSpecies();
 
     // REPRODUCTION AND SPECIATION///
     void reproduce(
@@ -280,6 +280,10 @@ struct Species_s {
     const SpeciesID_t ID;
     // The last generation when the species was alive and evaluated
     GenerationID_t last_living_generation;
+    // The last generation that imrpoved on the cumulative_max_fitness
+    GenerationID_t last_improved_generation;
+    // The last generation that imrpoved on the cumulative_max_fitness
+    GenerationID_t generation_of_inception;
     // The maximum fitness seen in the species across all generations
     Float_t cumulative_max_fitness;
     // The maximum fitness of the current generation
@@ -289,8 +293,6 @@ struct Species_s {
     Float_t current_avg_fitness;
     // The number of offspring allocated to this species
     GenomeID_t allotted_offspring;
-    // How many generations since the last imrpovement to `cumulative_max_fitness`
-    GenerationID_t staleness;
     // Representative when speciating (index for `POOL.gene_pool`)
     GenomeID_t representative;
     // Self-explanitory
@@ -304,10 +306,11 @@ struct Species_s {
             : POOL(POOL)
             , ID(POOL.getNextSpeciesNumber())
             , last_living_generation(POOL.generation_num)
+            , generation_of_inception(POOL.generation_num)
+            , last_improved_generation(POOL.generation_num)
             , cumulative_max_fitness(0)
             , current_max_fitness(0)
             , current_avg_fitness(0)
-            , staleness(0)
             , representative(ERR_VAL<GenomeID_t>())
             , members{genome_ids...}
             , extinct(false)
@@ -317,10 +320,11 @@ struct Species_s {
             : POOL(other.POOL)
             , ID(other.ID)
             , last_living_generation(other.last_living_generation)
+            , last_improved_generation(other.last_improved_generation)
+            , generation_of_inception(other.generation_of_inception)
             , cumulative_max_fitness(other.cumulative_max_fitness)
             , current_max_fitness(other.current_max_fitness)
             , current_avg_fitness(other.current_avg_fitness)
-            , staleness(other.staleness)
             , representative(other.representative)
             , members(other.members)
             , extinct(other.extinct)
@@ -490,7 +494,7 @@ struct Genome_s {
     
     /// DEBUGGING ///
     friend std::ostream& operator<<(std::ostream& out, const Genome_s& genome);
-    void simplifiedPrint(std::ostream& out) const;
+    void simplifiedPrint(std::ostream& out, const bool print_genome = true) const;
     inline void printNode(std::ostream& out, const NodeID_t n) const { POOL.printNode(out, n); }
 };
 
