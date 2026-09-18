@@ -16,6 +16,24 @@ set(INCLUDE_DIRS
     ${DEP}/include
 )
 
+# Download cpp-tui if needed
+if (
+    NOT EXISTS ${DEP}/include/cpptui.hpp 
+    OR NOT EXISTS ${DEP/include/cpptui-LICENSE}
+)
+    set(CPPTUI_VERS "v1.14.0")
+
+    file(DOWNLOAD
+        "https://raw.githubusercontent.com/jonoton/cpp-tui/${CPPTUI_VERS}/cpptui.hpp"
+        ${DEP}/include/cpptui.hpp
+    )
+    file(DOWNLOAD
+        "https://raw.githubusercontent.com/jonoton/cpp-tui/${CPPTUI_VERS}/cpptui.hpp"
+        ${DEP}/include/cpptui-LICENSE
+    )
+endif()
+
+
 # Common source files
 file(GLOB SOURCES ${SRC}/lib/*.cpp)
 
