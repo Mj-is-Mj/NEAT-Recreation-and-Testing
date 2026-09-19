@@ -7,6 +7,7 @@
 #include <iostream>
 #include <ostream>
 #include <vector>
+#include <cmath>
 #include <list>
 
 namespace NEAT {
@@ -21,12 +22,6 @@ namespace NEAT {
     `minimum_species_count` are to be used for this functionality. One
     concern, does "top two species" refer to the top two currently living 
     species, or can it include previously extinct ones? I assume living-only.
-
-    "interspecies mating rate" (pg 15, pr 1). For simlification of
-    implementation, I opted to have inerspecies mating function by selecting
-    one member from within the species and one member from the entire gene pool. 
-    This means that it may still mate with a member of its own species, but
-    with a large enough population and species count this would be unlikely. 
 
     "There was a 75% chance that an inherited gene was disabled if it was 
     disabled in either parent" (pg 15, pr 1). The phrasing is slightly 
@@ -66,10 +61,10 @@ template<typename T>
 inline constexpr T ERR_VAL() { return ~(T{0}); }
 // ERR_VAL specifically for Float_t
 template<>
-inline constexpr Float_t ERR_VAL() { return (Float_t)(-1e38); };
+inline constexpr Float_t ERR_VAL() { return NAN; };
 // Checks if value is an error
 template<typename T>
-inline constexpr bool IS_ERR(const T val) { return val == ERR_VAL<typeof(T)>(); }
+inline constexpr bool IS_ERR(const T val) { return val == ERR_VAL<T>(); }
 
 // Evaluation function for genomes
 typedef Float_t (*EvaluateFunc_t)(const Genome_s&);
@@ -144,7 +139,7 @@ struct Parameters_s {
     // Paramters relating to the Compatibility Distance Function
     CDF_s cdf;
     // The initial size of each generation
-    SpeciesID_t population_size;
+    GenomeID_t population_size;
 };
 
 // Parameters as defined in the paper
@@ -274,7 +269,8 @@ struct GenePool_s {
 
     /// CULLING ///
     void evaluatePopulation();
-    void updateSpeciesStats();
+    void updateSpeciesFitnessStats();
+    void allotOffspring();
     void cullSpecies();
     void cullFromSpecies(Species_s& spec);
     void cullFromAllSpecies();
@@ -282,9 +278,9 @@ struct GenePool_s {
     // REPRODUCTION AND SPECIATION///
     void reproduce(
         const Species_s& spec, 
-        const std::vector<GenomeID_t>& interspecies_pool,
         std::vector<Genome_s>& child_gene_pool
     );
+    GenomeID_t selectFromOtherSpecies(const Species_s& given);
     std::vector<Genome_s> reproduce();
     void selectRepresentatives();
     void takeNewMembers(
@@ -293,7 +289,7 @@ struct GenePool_s {
         const std::vector<Genome_s>& child_gene_pool
     );
     // If there are no species, add all genomes to a new species
-    void forceSpeciate();
+    void forceSingleSpecies();
     void speciate(const std::vector<Genome_s>& child_gene_pool);
 
     /// "MAIN" FUNCTION ///

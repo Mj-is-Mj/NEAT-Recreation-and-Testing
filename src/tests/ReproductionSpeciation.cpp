@@ -73,7 +73,7 @@ int main() {
     }
 
     pool.cullFromAllSpecies();
-    pool.updateSpeciesStats();
+    pool.updateSpeciesFitnessStats();
 
     std::cout << pool << std::endl;
 }

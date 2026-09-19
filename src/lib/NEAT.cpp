@@ -1,5 +1,6 @@
 #include "../inc/NEAT.hpp"
 #include "../inc/randutil.hpp"
+#include <cstdlib>
 #include <vector>
 
 // Repeat connections are not allowed to be added from "add connection"
@@ -60,16 +61,10 @@ NodeID_t GenePool_s::getRandomOutputNodeID() const {
     );
 }
 
-void GenePool_s::updateSpeciesStats() {
-    Float_t sum_avg_fitnesss = 0;
-
+void GenePool_s::updateSpeciesFitnessStats() {
     for (Species_s& spec : species) {
         // Skip extinct species
-        if (spec.extinct) {
-            continue;
-        }
-        if (spec.getPopSize() <= 0) {
-            spec.extinct = true;
+        if (spec.extinct || spec.getPopSize() <= 0) {
             continue;
         }
 
@@ -90,14 +85,34 @@ void GenePool_s::updateSpeciesStats() {
             }
 
             // Add to average
-            spec.current_avg_fitness += genome.fitness;
+            spec.current_avg_fitness += (IS_ERR(genome.fitness)
+                ? 0 // **Provide warning?
+                : genome.fitness
+            );
         }
 
         // Correct average fitness
         spec.current_avg_fitness /= (Float_t)(spec.getPopSize());
+        
+        // Reset allotted offspring
+        spec.allotted_offspring = ERR_VAL<GenomeID_t>();
+    }
+}
 
-        // Add to average fitness only if not extinct
-        sum_avg_fitnesss += spec.current_avg_fitness;
+void GenePool_s::allotOffspring() {
+    Float_t sum_avg_fitnesss = 0;
+
+    for (Species_s& spec : species) {
+        // Skip extinct species
+        if (spec.extinct) {
+            continue;
+        }
+        
+        // Add fitness value
+        sum_avg_fitnesss += (IS_ERR(spec.current_avg_fitness)
+            ? 0 // **Provide warning?
+            : spec.current_avg_fitness
+        );
     }
 
     /*
@@ -217,9 +232,29 @@ void GenePool_s::cullFromAllSpecies() {
     }
 }
 
+GenomeID_t GenePool_s::selectFromOtherSpecies(const Species_s& given) {
+    GenomeID_t count = 0;
+
+    for (const Species_s& spec : species) {
+        if (spec.extinct) continue;
+        if (&spec == &given) continue;
+        count += spec.getPopSize();
+    }
+
+    GenomeID_t rand = RandUtil::randUpTo(count);
+    for (const Species_s& spec : species) {
+        if (spec.extinct) continue;
+        if (&spec == &given) continue;
+        if (rand < spec.getPopSize()) return spec.members[rand];
+
+        rand -= spec.getPopSize();
+    }
+
+    return ERR_VAL<GenomeID_t>();
+}
+
 void GenePool_s::reproduce(
         const Species_s& spec, 
-        const std::vector<GenomeID_t>& interspecies_pool,
         std::vector<Genome_s>& child_gene_pool
 ) {
     const Float_t& CROSSOVER_PROPORTION = PARAMETERS.reproduction.crossover_proportion;
@@ -244,9 +279,8 @@ void GenePool_s::reproduce(
         std::swap(member_ids[a], member_ids[b]);
     }
 
-    // Whether or not the species can cross within itself
-    // I.e. false ==> only interspecies crossover is possible
-    const bool INTER_ONLY = spec.getPopSize() < 2;
+    const bool ALLOW_INTRA_CROSS = spec.getPopSize() > 1;
+    const bool ALLOW_INTER_CROSS = species.size() > 1;
 
     // Indices for `gene_pool`
     GenomeID_t iA=0,iB=0;
@@ -256,17 +290,18 @@ void GenePool_s::reproduce(
         miA = i % member_ids.size();
         iA = member_ids[miA];
 
+
         // If crossover
-        if (
-            (!INTER_ONLY && RandUtil::randProb(CROSSOVER_PROPORTION))
-            || (INTER_ONLY && RandUtil::randProb(INTERSPECIES_RATE))
+        if (0
+            || (ALLOW_INTRA_CROSS && RandUtil::randProb(CROSSOVER_PROPORTION))
+            || (ALLOW_INTER_CROSS && !ALLOW_INTRA_CROSS && RandUtil::randProb(CROSSOVER_PROPORTION*INTERSPECIES_RATE))
         ) {
-            // If interspecies crossover
-            if (INTER_ONLY || RandUtil::randProb(INTERSPECIES_RATE)) {
+            // If only interspecies crossover is allowed, or the a random chance for interspecies has been satisfied
+            if (!ALLOW_INTRA_CROSS || RandUtil::randProb(INTERSPECIES_RATE)) {
                 // Select randomly from any live species
-                iB = RandUtil::randFrom(interspecies_pool);
+                iB = selectFromOtherSpecies(spec);
             }
-            // If within this species
+            // Otherwise, intraspecies crossover
             else {
                 // Select random other member of this species
                 miB = RandUtil::randCompleteUniquePair(miA, member_ids.size());
@@ -292,24 +327,6 @@ void GenePool_s::reproduce(
 }
 
 std::vector<Genome_s> GenePool_s::reproduce() {
-    // Vector to contain IDs for all genomes belonging to non-extinct species
-    std::vector<GenomeID_t> remaining_population;
-    remaining_population.reserve(
-        PARAMETERS.population_size
-        *PARAMETERS.reproduction.cull_ratio
-    );
-
-    // Copy GenomeIDs from each species
-    for (const auto& spec : species) {
-        if (spec.extinct) continue;
-
-        remaining_population.insert(
-            remaining_population.end(),
-            spec.members.begin(),
-            spec.members.end()
-        );
-    }
-
     // Create child gene pool
     std::vector<Genome_s> child_gene_pool;
     child_gene_pool.reserve(PARAMETERS.population_size);
@@ -319,7 +336,6 @@ std::vector<Genome_s> GenePool_s::reproduce() {
 
         reproduce(
             spec,
-            remaining_population,
             child_gene_pool
         );
     }
@@ -361,9 +377,9 @@ void GenePool_s::takeNewMembers(
     }
 }
 
-void GenePool_s::forceSpeciate() {
-    if (species.size() > 0) return;
+void GenePool_s::forceSingleSpecies() {
     if (gene_pool.size() < 1) return;
+    species.clear();
 
     Species_s& spec = species.emplace_back(*this);
     spec.members.reserve(gene_pool.size());
@@ -407,20 +423,26 @@ void GenePool_s::speciate(const std::vector<Genome_s>& child_gene_pool) {
 void GenePool_s::newGeneration() {
     // Esnure there are genomes
     if (gene_pool.size() < 1) return;
-    // If no species, place all genomes into one species to start
-    forceSpeciate();
+    // Ensure there is at least one species
+    if (species.size() < 1) forceSingleSpecies();
 
+    // Ensure the most recent population has been evaluated and species stats have been generated
     if (!has_been_evaluated) {
         evaluatePopulation();
-        updateSpeciesStats();
+        updateSpeciesFitnessStats();
     }
 
-    // Cull
+    // Cull stale species
     cullSpecies();
+    // Cull low-performing organisms
     cullFromAllSpecies();
+    // Update stats again
+    updateSpeciesFitnessStats();
 
-    // Update again
-    updateSpeciesStats();
+    // Allot offspring to each species
+    allotOffspring();
+    // Cull any species marked for extinction (i.e. assigned <1 offspring during `updateSpeciesStats()`)
+    cullSpecies();
 
     // Produce next generation
     auto child_gene_pool = reproduce();
@@ -435,9 +457,9 @@ void GenePool_s::newGeneration() {
     // Remove any empty species
     cullSpecies();
 
-    // // Evaluate the new population
+    // Evaluate the new population
     evaluatePopulation();
-    updateSpeciesStats();
+    updateSpeciesFitnessStats();
 }
 
 NodeType_e GenePool_s::getNodeType(const NodeID_t n) const {
@@ -582,9 +604,11 @@ Genome_s::Genome_s(
 NodeID_t Genome_s::getRandomNodeID() const {
     return RandUtil::randUpTo(node_count);
 }
+
 NodeID_t Genome_s::getRandomHiddenNodeID() const {
     return RandUtil::randRange(getHiddenNodeStart(), getHiddenNodeEnd());
 }
+
 NodeID_t Genome_s::getRandomInputOrHiddenNodeID() const {
     const NodeID_t N = RandUtil::randUpTo(getInputNodeCount() + getHiddenNodeCount());
     if (N < getInputNodeCount()) {
@@ -594,6 +618,7 @@ NodeID_t Genome_s::getRandomInputOrHiddenNodeID() const {
         return getHiddenNodeStart() + N - getInputNodeCount();
     }
 }
+
 NodeID_t Genome_s::getRandomOutputOrHiddenNodeID() const {
     const NodeID_t N = RandUtil::randUpTo(getOutputNodeCount() + getHiddenNodeCount());
     if (N < getOutputNodeCount()) {
@@ -603,6 +628,7 @@ NodeID_t Genome_s::getRandomOutputOrHiddenNodeID() const {
         return getHiddenNodeStart() + N - getOutputNodeCount();
     }
 }
+
 GeneID_t Genome_s::getRandomGeneID() const {
     return RandUtil::randUpTo(getGenomeSize());
 }
