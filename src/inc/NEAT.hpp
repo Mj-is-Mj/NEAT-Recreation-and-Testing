@@ -5,6 +5,7 @@
 #include <cassert>
 
 #include <iostream>
+#include <limits>
 #include <ostream>
 #include <vector>
 #include <cmath>
@@ -14,20 +15,21 @@ namespace NEAT {
 
 /*
         ### CURRENTLY MISSING/QUESTIONABLE FUNCTIONALITY ###
-    
-    "In rare cases when the fitness of the entire population does not 
-    improve for more than 20 generations, only the top two species are 
-    allowed to reproduce, refocusing the search into the most promising 
-    spaces" (pg 13, fn 2). Parameters `population_stagnation_limit` and 
-    `minimum_species_count` are to be used for this functionality. One
-    concern, does "top two species" refer to the top two currently living 
-    species, or can it include previously extinct ones? I assume living-only.
 
     "There was a 75% chance that an inherited gene was disabled if it was 
     disabled in either parent" (pg 15, pr 1). The phrasing is slightly 
     ambiguous, but I interpreted as "When a matching gene is inherited and exactly
     one parent has the gene disabled, the resulting gene is disabled 75% of the time
     (instead of 50% from regular inheritence). 
+
+    Usage of `[]` for indexing vectors everywhere. This should be replaced with
+    `.at()` in the future, or possibly a macro to switch back and forth (verify with 
+    `.at()`, switch to `[]` for real runs). 
+
+    Pass/Fail style testing. I've mostly been doing "eyeball" tests, with only a few
+    real "failable" tests. Tests will absolutely need to be redone soon to ensure 
+    everything is behaving as-expected. Not an urgent concern since eyeball tests are
+    enough to see nothing is catastrophically failing. 
 
 */
 
@@ -59,12 +61,16 @@ typedef size_t  GenerationID_t;
 // Returns the value denoted as an error for the above typedefs
 template<typename T>
 inline constexpr T ERR_VAL() { return ~(T{0}); }
-// ERR_VAL specifically for Float_t
-template<>
-inline constexpr Float_t ERR_VAL() { return NAN; };
 // Checks if value is an error
 template<typename T>
 inline constexpr bool IS_ERR(const T val) { return val == ERR_VAL<T>(); }
+
+// ERR_VAL specifically for Float_t
+template<>
+inline constexpr Float_t ERR_VAL() { return std::numeric_limits<Float_t>::quiet_NaN(); };
+// Checks if value is an error
+template<>
+inline constexpr bool IS_ERR(const Float_t val) { return std::isnan(val); }
 
 // Evaluation function for genomes
 typedef Float_t (*EvaluateFunc_t)(const Genome_s&);
@@ -192,8 +198,13 @@ struct GenePool_s {
     const EvaluateFunc_t EVALUATE_GENOME;
     // Whether or not the current generation has been evaluated
     bool has_been_evaluated;
-    // Number of generations since any improvment
-    GenerationID_t staleness;
+    // Whether or not species stats are up to date
+    bool stats_up_to_date;
+
+    // The maximum fitness ever seen in the entire gene pool
+    Float_t max_cumulative_fitness;
+    // Last generation to see improvment
+    GenerationID_t last_improved_generation;
 
     /// Population ///
     // All genomes in the current generation
@@ -222,7 +233,9 @@ struct GenePool_s {
         , PARAMETERS(parameters)
         , EVALUATE_GENOME(eval_func)
         , has_been_evaluated(false)
-        , staleness(0)
+        , stats_up_to_date(false)
+        , max_cumulative_fitness(ERR_VAL<Float_t>())
+        , last_improved_generation(0)
         , innovation_num(0)
         , genome_num(0)
         , species_num(0)
@@ -230,6 +243,8 @@ struct GenePool_s {
         , gene_pool()
         , species()
     { gene_pool.reserve(parameters.population_size); }
+
+    GenePool_s(const GenePool_s& other) = delete;
 
 
     /// Initialization ///
@@ -315,9 +330,9 @@ struct Species_s {
     Float_t current_avg_fitness;
     // The number of offspring allocated to this species
     GenomeID_t allotted_offspring;
-    // Representative when speciating (index for `POOL.gene_pool`)
-    GenomeID_t representative;
-    // Self-explanitory
+    // Representative for the species (will be nullptr most of the time)
+    const Genome_s* representative;
+    // Self-explanatory
     bool extinct;
 
     // The IDs of the genomes of all members of the species
@@ -330,12 +345,12 @@ struct Species_s {
             , last_living_generation(POOL.generation_num)
             , generation_of_inception(POOL.generation_num)
             , last_improved_generation(POOL.generation_num)
-            , cumulative_max_fitness(0)
-            , current_max_fitness(0)
-            , current_avg_fitness(0)
-            , representative(ERR_VAL<GenomeID_t>())
-            , members{genome_ids...}
+            , cumulative_max_fitness(ERR_VAL<Float_t>())
+            , current_max_fitness(ERR_VAL<Float_t>())
+            , current_avg_fitness(ERR_VAL<Float_t>())
+            , representative(nullptr)
             , extinct(false)
+            , members{genome_ids...}
     {}
 
     inline Species_s(const Species_s& other)
@@ -348,8 +363,8 @@ struct Species_s {
             , current_max_fitness(other.current_max_fitness)
             , current_avg_fitness(other.current_avg_fitness)
             , representative(other.representative)
-            , members(other.members)
             , extinct(other.extinct)
+            , members(other.members)
     {}
 
     inline GenomeID_t getPopSize() const 
@@ -358,8 +373,6 @@ struct Species_s {
         { return members[RandUtil::randUpTo(members.size())]; }
     inline void getRandomGenomeIDPair(GenomeID_t& a, GenomeID_t& b) const 
         { return RandUtil::randUniquePair(a,b,members.size()); }
-    inline const Genome_s& getRepresentative() const
-        { return POOL.gene_pool[representative]; }
 };
 
 // A single gene representing a connection

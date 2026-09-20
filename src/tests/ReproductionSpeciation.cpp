@@ -32,9 +32,9 @@ constexpr Parameters_s LOCAL_PARAMS {
     },
     .cdf = {
         .c1=1.0, .c2=1.0, .c3=0.4,
-        .distance_thresh = 0.7,
+        .distance_thresh = 0.6,
     },
-    .population_size = 50,
+    .population_size = 128,
 };
 
 Float_t evaluateNetwork(const Genome_s& genome) {
@@ -66,10 +66,11 @@ int main() {
     std::cout << pool;
 
 
-    for (size_t i = 0; i < 100; ++i) {
+    for (size_t i = 0; i < 128; ++i) {
         pool.newGeneration();
 
-        std::cout << pool << std::endl;
+        if (i % 16 == 0)
+            std::cout << pool << std::endl;
     }
 
     pool.cullFromAllSpecies();
@@ -77,3 +78,15 @@ int main() {
 
     std::cout << pool << std::endl;
 }
+
+
+/*
+
+    | ER | RA | crs | itr |
+    |  0 |  0 |   0 |   - |
+    |  0 |  1 |   h |   0 |
+    |  1 |  0 |  lh |   1 |
+    |  1 |  1 |   h |   l |
+
+
+*/

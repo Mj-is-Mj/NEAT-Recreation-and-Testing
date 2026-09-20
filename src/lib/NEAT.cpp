@@ -23,13 +23,14 @@ namespace NEAT {
 
 void GenePool_s::clear() {
     has_been_evaluated = false;
-    staleness = false;
+    max_cumulative_fitness = ERR_VAL<Float_t>();
+    last_improved_generation = 0;
+    gene_pool.clear();
+    species.clear();
     innovation_num = 0;
     genome_num = 0;
     species_num = 0;
     generation_num = 0;
-    gene_pool.clear();
-    species.clear();
 }
 
 bool GenePool_s::addGenome(const Genome_s genome, const GenomeID_t count) {
@@ -68,6 +69,9 @@ void GenePool_s::updateSpeciesFitnessStats() {
             continue;
         }
 
+        // Tracks how many genomes had erroneous fitness values
+        GenomeID_t err_count = 0;
+
         spec.current_max_fitness = 0;
         spec.current_avg_fitness = 0;
         spec.allotted_offspring = ERR_VAL<GenomeID_t>();
@@ -75,24 +79,50 @@ void GenePool_s::updateSpeciesFitnessStats() {
         for (const GenomeID_t gid : spec.members) {
             const Genome_s& genome = gene_pool[gid];
 
-            // Update max fitness values
+            // Check for nan/error values (IS_ERR should be the same as std::isnan, but just in case)
+            if (IS_ERR(genome.fitness) || std::isnan(genome.fitness)) {
+                ++err_count;
+                continue;
+            }
+
+            // Update max fitness for this generation
             if (genome.fitness > spec.current_max_fitness) {
                 spec.current_max_fitness = genome.fitness;
-                if (genome.fitness > spec.cumulative_max_fitness) {
+                
+                // Update max fitness of all time for the species
+                if (
+                    genome.fitness > spec.cumulative_max_fitness
+                    || IS_ERR(spec.cumulative_max_fitness)
+                ) {
                     spec.cumulative_max_fitness = genome.fitness;
                     spec.last_improved_generation = this->generation_num;
                 }
             }
 
             // Add to average
-            spec.current_avg_fitness += (IS_ERR(genome.fitness)
-                ? 0 // **Provide warning?
-                : genome.fitness
-            );
+            spec.current_avg_fitness += genome.fitness;
+        }
+
+        // Update max fitness of all time for the entire gene pool
+        if ( !IS_ERR(spec.cumulative_max_fitness)
+            && ( spec.cumulative_max_fitness > max_cumulative_fitness
+            || IS_ERR(max_cumulative_fitness) )
+        ) {
+            max_cumulative_fitness = spec.cumulative_max_fitness;
+            last_improved_generation = generation_num;
+        }
+
+        // Number of genomes with non-erroneous fitness values
+        const GenomeID_t valid_count = spec.getPopSize() - err_count;
+        // If none of the above, cannot compute fitness stats
+        if (valid_count < 1) {
+            spec.current_max_fitness = ERR_VAL<Float_t>();
+            spec.current_avg_fitness = ERR_VAL<Float_t>();
+            continue;
         }
 
         // Correct average fitness
-        spec.current_avg_fitness /= (Float_t)(spec.getPopSize());
+        spec.current_avg_fitness /= valid_count;
         
         // Reset allotted offspring
         spec.allotted_offspring = ERR_VAL<GenomeID_t>();
@@ -169,16 +199,24 @@ void GenePool_s::evaluatePopulation() {
 }
 
 void GenePool_s::cullSpecies() {
-    const GenerationID_t& STAG_LIMIT = PARAMETERS.stagnation.species_stagnation_limit;
-    
-    auto sitr = species.begin();
-    GenerationID_t staleness;
+    struct SortSpecies {
+        bool operator()(const Species_s& lhs, const Species_s& rhs) {
+            return lhs.cumulative_max_fitness > rhs.cumulative_max_fitness;
+        }
+    };
 
+    const GenerationID_t& SPEC_STAG_LIMIT = PARAMETERS.stagnation.species_stagnation_limit;
+    const GenerationID_t& POP_STAG_LIMIT = PARAMETERS.stagnation.population_stagnation_limit;
+    const SpeciesID_t& MIN_SPEC_COUNT = PARAMETERS.stagnation.minimum_species_count;
+
+    // Cull any stagnating/stale or extinct species
+    auto sitr = species.begin();
+    GenerationID_t species_staleness;
     while (sitr != species.end()) {
         auto& spec = *sitr;
-        staleness = this->generation_num - spec.last_improved_generation;
+        species_staleness = this->generation_num - spec.last_improved_generation;
 
-        if (spec.extinct || staleness > STAG_LIMIT || spec.getPopSize() < 1) {
+        if (spec.extinct || species_staleness > SPEC_STAG_LIMIT || spec.getPopSize() < 1) {
             spec.extinct = true;
             sitr = species.erase(sitr);
         }
@@ -187,6 +225,21 @@ void GenePool_s::cullSpecies() {
             ++sitr;
         }
     }
+
+    // Cull down to a fixed number of species if the population as a whole is stagnating
+        // [page 13, footnote 2]
+    GenomeID_t population_staleness = generation_num - this->last_improved_generation;
+    if (population_staleness > POP_STAG_LIMIT && species.size() > MIN_SPEC_COUNT) {
+        // Sort species (best-performing first)
+        species.sort(SortSpecies());
+
+        // Remove all but top `MIN_SPEC_COUNT` species
+        auto first_cull = species.begin();
+        std::advance(first_cull, MIN_SPEC_COUNT);
+        species.erase(first_cull, species.end());
+    }
+
+    stats_up_to_date = false;
 }
 
 void GenePool_s::cullFromSpecies(Species_s& spec) {
@@ -230,6 +283,8 @@ void GenePool_s::cullFromAllSpecies() {
         if (spec.extinct) continue;
         cullFromSpecies(spec);
     }
+
+    stats_up_to_date = false;
 }
 
 GenomeID_t GenePool_s::selectFromOtherSpecies(const Species_s& given) {
@@ -296,8 +351,14 @@ void GenePool_s::reproduce(
             || (ALLOW_INTRA_CROSS && RandUtil::randProb(CROSSOVER_PROPORTION))
             || (ALLOW_INTER_CROSS && !ALLOW_INTRA_CROSS && RandUtil::randProb(CROSSOVER_PROPORTION*INTERSPECIES_RATE))
         ) {
-            // If only interspecies crossover is allowed, or the a random chance for interspecies has been satisfied
-            if (!ALLOW_INTRA_CROSS || RandUtil::randProb(INTERSPECIES_RATE)) {
+
+            // If interspecies
+                // If only interspecies is allowed, then skip the check
+                // If intraspecies is allowed, check
+            if (0
+                || (ALLOW_INTER_CROSS && !ALLOW_INTRA_CROSS)
+                || (ALLOW_INTER_CROSS && ALLOW_INTRA_CROSS && RandUtil::randProb(INTERSPECIES_RATE))
+            ) {
                 // Select randomly from any live species
                 iB = selectFromOtherSpecies(spec);
             }
@@ -346,7 +407,7 @@ std::vector<Genome_s> GenePool_s::reproduce() {
 void GenePool_s::selectRepresentatives() {
     for (Species_s& spec : species) {
         if (spec.extinct) continue;
-        spec.representative = RandUtil::randFrom(spec.members);
+        spec.representative = &(gene_pool[RandUtil::randFrom(spec.members)]);
     }
 }
 
@@ -355,7 +416,6 @@ void GenePool_s::takeNewMembers(
     std::list<GenomeID_t>& remaining_child_genome_ids,
     const std::vector<Genome_s>& child_gene_pool
 ) {
-    const Genome_s& REP = spec.getRepresentative();
     const Float_t& THRESH = PARAMETERS.cdf.distance_thresh;
 
     spec.members.clear();
@@ -365,7 +425,10 @@ void GenePool_s::takeNewMembers(
 
     while (citr != remaining_child_genome_ids.end()) {
         const Genome_s& child = child_gene_pool[*citr];
-        dist = Genome_s::compatibilityDistance(REP, child);
+        dist = Genome_s::compatibilityDistance(
+            *(spec.representative), 
+            child
+        );
 
         if (dist < THRESH) {
             spec.members.push_back(*citr);
@@ -390,6 +453,9 @@ void GenePool_s::forceSingleSpecies() {
 }
 
 void GenePool_s::speciate(const std::vector<Genome_s>& child_gene_pool) {
+    // Select new representatives for existing species
+    selectRepresentatives();
+
     std::list<GenomeID_t> remaining_child_genome_ids;
     for (GenomeID_t i = 0; i < child_gene_pool.size(); ++i)
         remaining_child_genome_ids.push_back(i);
@@ -407,9 +473,12 @@ void GenePool_s::speciate(const std::vector<Genome_s>& child_gene_pool) {
     while ( ! remaining_child_genome_ids.empty()) {
         // Create new species with the next child as a representative
         Species_s& new_spec = species.emplace_back(*this);
-        new_spec.representative = remaining_child_genome_ids.front();
-        new_spec.members.push_back(new_spec.representative);
+        const GenomeID_t rep_id = remaining_child_genome_ids.front();
         remaining_child_genome_ids.pop_front();
+
+        // Set representative and add to species member list
+        new_spec.representative = &(child_gene_pool[rep_id]);
+        new_spec.members.push_back(rep_id);
 
         // Take members for the new species
         takeNewMembers(
@@ -417,6 +486,11 @@ void GenePool_s::speciate(const std::vector<Genome_s>& child_gene_pool) {
             remaining_child_genome_ids,
             child_gene_pool
         );
+    }
+
+    // Deselect all representatives
+    for (Species_s& spec : species) {
+        spec.representative = nullptr;
     }
 }
 
@@ -439,6 +513,7 @@ void GenePool_s::newGeneration() {
     // Update stats again
     updateSpeciesFitnessStats();
 
+    // Check if the population as a whole has stagnated
     // Allot offspring to each species
     allotOffspring();
     // Cull any species marked for extinction (i.e. assigned <1 offspring during `updateSpeciesStats()`)
@@ -448,8 +523,7 @@ void GenePool_s::newGeneration() {
     auto child_gene_pool = reproduce();
     ++generation_num;
 
-    // Select representatives and get members for each species
-    selectRepresentatives();
+    // Speciate the new population
     speciate(child_gene_pool);
     gene_pool = std::move(child_gene_pool);
     has_been_evaluated = false;
@@ -501,8 +575,11 @@ void GenePool_s::printNode(std::ostream& out, const NodeID_t n) const {
 }
 
 std::ostream& operator<<(std::ostream& out, const GenePool_s& pool) {
-    out << "CURRENT GENERATION: " << pool.generation_num << std::endl;
-    out << "Population size: " << pool.gene_pool.size() << std::endl;
+    out << "CURRENT GENERATION:   " << pool.generation_num << std::endl;
+    out << "Population size:      " << pool.gene_pool.size() << std::endl;
+    out.precision(5);
+    out << "Highest seen fitness: " << pool.max_cumulative_fitness << std::endl;
+    out << "Last improved gen:    " << pool.last_improved_generation << std::endl;
 
     out << "Parameters {" << std::endl
         << "\tInputs:  " << pool.INPUT_NODE_COUNT << std::endl
@@ -857,7 +934,7 @@ Genome_s Genome_s::crossover(const Genome_s &pA, const Genome_s &pB) {
         child.genome.push_back(RandUtil::randCoinFlip() ? gA : gB);
 
         // "There was a 75% chance that an inherited gene was disabled if 
-        // it was disabled in either parent." 
+        // it was disabled in either parent." [page 15, paragraph 1]
         // I'm not sure if "was disabled" means "the result was a disabled gene"
         // or "was disabled through an added chance to disable". I'm also not 
         // sure if "either" is exclusive or inclusive, 
