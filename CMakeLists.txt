@@ -16,6 +16,10 @@ set(INCLUDE_DIRS
     ${DEP}/include
 )
 
+# Libraries / packages
+find_package(glm CONFIG REQUIRED)
+find_package(SDL3 CONFIG REQUIRED)
+
 # Common source files
 file(GLOB SOURCES ${SRC}/lib/*.cpp)
 
@@ -31,6 +35,8 @@ function(make_exectuable EXE_SOURCE)
     target_include_directories(${EXE_NAME} PRIVATE
         ${INCLUDE_DIRS}
     )
+
+    target_link_libraries(${EXE_NAME} PRIVATE glm::glm SDL3::SDL3)
 endfunction()
 
 
