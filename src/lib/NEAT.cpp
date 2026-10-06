@@ -639,7 +639,7 @@ Genome_s::Genome_s(const GenePool_s& pool, const bool fully_connect)
     , ID(pool.getNextGenomeNumber())
     , PARENT_A(ERR_VAL<NodeID_t>())
     , PARENT_B(ERR_VAL<NodeID_t>())
-    , node_count(pool.INPUT_NODE_COUNT + pool.OUTPUT_NODE_COUNT)\
+    , node_count(pool.INPUT_NODE_COUNT + pool.OUTPUT_NODE_COUNT + (hasBias() ? 1 : 0))
     , fitness(0)
     , genome()
 {

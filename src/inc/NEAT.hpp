@@ -452,7 +452,7 @@ struct Genome_s {
     constexpr NodeID_t getInputNodeCount() const { return POOL.INPUT_NODE_COUNT; };
     constexpr NodeID_t getOutputNodeCount() const { return POOL.OUTPUT_NODE_COUNT; };
     constexpr NodeID_t getHiddenNodeCount() const 
-        { return node_count - getInputNodeCount() - getOutputNodeCount(); };
+        { return node_count - getInputNodeCount() - getOutputNodeCount() - (hasBias() ? 1 : 0); };
     inline GeneID_t getGenomeSize() const { return genome.size(); }
     
     // Identity
@@ -517,6 +517,8 @@ struct Genome_s {
     inline NodeID_t getBiasNode() const { return POOL.getBiasNode(); };
     inline bool isInputNode(const NodeID_t n) const { return POOL.isInputNode(n); }
     inline bool isOutputNode(const NodeID_t n) const { return POOL.isOutputNode(n); }
+    inline bool isBiasNode(const NodeID_t n) const { return hasBias() && n == getBiasNode(); }
+    inline bool isHiddenNode(const NodeID_t n) const { return getHiddenNodeStart() <= n && n < getHiddenNodeEnd(); }
     // Misc
     inline NodeID_t getHiddenNodeEnd() const { return node_count; };
     inline GeneID_t getConnectionCount() const { return getGenomeSize(); };
