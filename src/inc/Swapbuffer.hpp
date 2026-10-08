@@ -56,9 +56,9 @@ struct SwapBuffer_s {
     
     public:
         // Do nothing
-        inline SwapBuffer_s<Data_tmp>() : _sb(), _count(0) {}
+        inline SwapBuffer_s() : _sb(), _count(0) {}
         // Creates buffers with the specified size, sets contents to zero when `zero=true`
-        SwapBuffer_s<Data_tmp>(const size_t count, const bool zero = true) : _count(count), _sb(_count*sizeof(Data_tmp), zero) {}
+        SwapBuffer_s(const size_t count, const bool zero = true) : _count(count), _sb(_count*sizeof(Data_tmp), zero) {}
 
 
         // Returns true if both buffers have been initialized correctly

@@ -39,15 +39,74 @@ namespace Activations {
         constexpr Float_t e = Math::Constants<Float_t>::EULER;
         return Float_t{1} / (Float_t{1} + Math::powt(e,x));
     }
+
+    constexpr ActivateFunc_t linear = nullptr;
 }
+
 
 /// End activation functions ///
 
+// Neural network that processes connections sequentially
+struct SequentialNetwork_s {
+    struct Connection_s;
+    struct Node_s;
 
-// A basic implementation of a neural network
-// Indended for readability and easy debugging
+    typedef NEAT::NodeID_t      NodeID_t;
+    typedef NEAT::GenomeID_t    ConnectionID_t;
+
+    struct Connection_s {
+        NodeID_t from,to;
+        Float_t weight;
+
+        Connection_s(const NEAT::Gene_s& gene);
+    };
+    struct Node_s {
+        Float_t value;
+    };
+
+    private:
+        // All connections
+        std::list<std::list<Connection_s>> _connections;
+        ConnectionID_t _connection_count;
+        std::vector<Node_s> _nodes;
+        // Start/end values for different types of nodes
+        const NodeID_t _input_start;
+        const NodeID_t _input_count;
+        const bool _has_bias;
+        const NodeID_t _bias_node;
+        const NodeID_t _output_start;
+        const NodeID_t _output_count;
+        // Whether or not the NN was constructed correctly
+        bool _ready;
+    
+    
+    public:
+        // The activation function used
+        const ActivateFunc_t general_activation;
+        const ActivateFunc_t output_activation;
+
+        // Constructs a network
+        SequentialNetwork_s(const NEAT::Genome_s& genome, const ActivateFunc_t hidden_activation = Activations::sigmoid, const ActivateFunc_t output_activation = nullptr);
+
+        // Returns true if buffers have been initialized correctly
+        inline bool isReady() const { return _ready; }
+
+        // Runs one iteration of the NN (member function)
+        // Takes a buffer of inputs, returns pointer to a buffer of outputs
+        // The returned buffer is a part of 
+        const Float_t* stepThis(const Float_t* const inputs);
+
+        // Runs one iteration of the NN (static function)
+        // Takes a buffer of inputs, returns pointer to a buffer of outputs
+        // The returned buffer is a part of 
+        static const Float_t* step(void* const network, const Float_t* const inputs);
+};
+
+
+// Neural network using buffered neuron/node values
 // Meant to have consistent results with smarter, parallelized networks
-struct BasicNetwork_s {
+// Indended for readability and easy debugging, not so much performance
+struct BufferredNetwork_s {
     struct Connection_s;
     struct Node_s;
 
@@ -79,21 +138,25 @@ struct BasicNetwork_s {
         // Whether or not the NN was constructed correctly
         bool _ready;
 
-        // Runs one iteration of the NN
-        // Takes a buffer of inputs, returns pointer to a buffer of outputs
-        // The returned buffer is a part of 
-        const Float_t* _step(const Float_t* const inputs);
-
     public:
         // The activation function used
-        const ActivateFunc_t activation;
+        const ActivateFunc_t general_activation;
+        const ActivateFunc_t output_activation;
 
         // Constructs a network
-        BasicNetwork_s(const NEAT::Genome_s genome, const ActivateFunc_t activation = Activations::sigmoid);
+        BufferredNetwork_s(const NEAT::Genome_s& genome, const ActivateFunc_t hidden_activation = Activations::sigmoid, const ActivateFunc_t output_activation = nullptr);
 
         // Returns true if buffers have been initialized correctly
         inline bool isReady() const { return _ready; }
 
+        // Runs one iteration of the NN (member function)
+        // Takes a buffer of inputs, returns pointer to a buffer of outputs
+        // The returned buffer is a part of 
+        const Float_t* stepThis(const Float_t* const inputs);
+
+        // Runs one iteration of the NN (static function)
+        // Takes a buffer of inputs, returns pointer to a buffer of outputs
+        // The returned buffer is a part of 
         static const Float_t* step(void* const network, const Float_t* const inputs);
 };
 

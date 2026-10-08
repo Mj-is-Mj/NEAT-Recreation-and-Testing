@@ -21,6 +21,28 @@ namespace NEAT {
 
 /// GENE POOL ///
 
+GenePool_s::GenePool_s(
+    const NodeID_t inputs, const NodeID_t outputs, const bool has_bias,
+    const Parameters_s parameters, const EvaluateFunc_t eval_func
+)   : INPUT_NODE_COUNT(inputs)
+    , OUTPUT_NODE_COUNT(outputs)
+    , HAS_BIAS_NODE(has_bias)
+    , PARAMETERS(parameters)
+    , EVALUATE_GENOME(eval_func)
+    , has_been_evaluated(false)
+    , stats_up_to_date(false)
+    , max_cumulative_fitness(ERR_VAL<Float_t>())
+    , last_improved_generation(0)
+    , innovation_num(0)
+    , genome_num(0)
+    , species_num(0)
+    , generation_num(0)
+    , gene_pool()
+    , species()
+{ 
+    gene_pool.reserve(parameters.population_size);
+}
+
 void GenePool_s::clear() {
     has_been_evaluated = false;
     max_cumulative_fitness = ERR_VAL<Float_t>();
@@ -31,6 +53,10 @@ void GenePool_s::clear() {
     genome_num = 0;
     species_num = 0;
     generation_num = 0;
+}
+
+Genome_s& GenePool_s::makeGenome(const bool fully_connect) { 
+    return gene_pool.emplace_back(*this, fully_connect);
 }
 
 bool GenePool_s::addGenome(const Genome_s genome, const GenomeID_t count) {
