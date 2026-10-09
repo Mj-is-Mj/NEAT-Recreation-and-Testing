@@ -31,6 +31,10 @@ namespace NEAT {
     everything is behaving as-expected. Not an urgent concern since eyeball tests are
     enough to see nothing is catastrophically failing. 
 
+    Oversight on "add connection" mutation: "add connection" can connection from 
+    outputs and to inputs, which was something I had not realized prior. I intentionally
+    prevented this because I had assumed such connections would be invalid. 
+
 */
 
 

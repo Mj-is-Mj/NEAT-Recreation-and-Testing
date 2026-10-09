@@ -18,6 +18,7 @@ typedef Float_t (*ActivateFunc_t)(const Float_t);
 typedef const Float_t* (*StepFunc_t)(void* const network, const Float_t* const inputs);
 
 
+// Activation functions
 namespace Activations {
     Float_t sigmoid(const Float_t x);
     Float_t ReLU(const Float_t x);
@@ -40,6 +41,7 @@ namespace Activations {
         return Float_t{1} / (Float_t{1} + Math::powt(e,x));
     }
 
+    // Does nothing, just nullptr
     constexpr ActivateFunc_t linear = nullptr;
 }
 
@@ -47,10 +49,10 @@ namespace Activations {
 /// End activation functions ///
 
 // Neural network that processes connections sequentially
+// Indended for readability and easy debugging, not so much performance
+// NOTE: The exact behaviour of a SequentialNetwork_s is dependent on the 
+// ordering of Genes in the Genome. 
 struct SequentialNetwork_s {
-    struct Connection_s;
-    struct Node_s;
-
     typedef NEAT::NodeID_t      NodeID_t;
     typedef NEAT::GenomeID_t    ConnectionID_t;
 
@@ -63,6 +65,7 @@ struct SequentialNetwork_s {
     struct Node_s {
         Float_t value;
     };
+    static_assert(sizeof(Node_s) == sizeof(Float_t), "ERROR: SequentialNetwork_s assumes that Node_s contains only a Float_t, so the sizes should match. ");
 
     private:
         // All connections
@@ -81,8 +84,9 @@ struct SequentialNetwork_s {
     
     
     public:
-        // The activation function used
+        // The activation function used for most nodes (primarily hidden nodes)
         const ActivateFunc_t general_activation;
+        // The activation function used for output nodes specifically
         const ActivateFunc_t output_activation;
 
         // Constructs a network
@@ -106,10 +110,10 @@ struct SequentialNetwork_s {
 // Neural network using buffered neuron/node values
 // Meant to have consistent results with smarter, parallelized networks
 // Indended for readability and easy debugging, not so much performance
+// NOTE: Networks with hidden nodes or recurrent connections will NOT be 
+// properly evaluated in one pass, i.e. "function"-like problems such as 
+// the XOR validation test will fail. 
 struct BufferredNetwork_s {
-    struct Connection_s;
-    struct Node_s;
-
     typedef NEAT::NodeID_t      NodeID_t;
     typedef NEAT::GenomeID_t    ConnectionID_t;
 
@@ -120,7 +124,7 @@ struct BufferredNetwork_s {
     struct Node_s {
         Float_t value;
     };
-    static_assert(sizeof(Node_s) == sizeof(Float_t), "ERROR: BasicNetwork assumes that Node_s contains only a Float_t, so the sizes should match. ");
+    static_assert(sizeof(Node_s) == sizeof(Float_t), "ERROR: BufferedNetwork assumes that Node_s contains only a Float_t, so the sizes should match. ");
 
     private:
         // All connections

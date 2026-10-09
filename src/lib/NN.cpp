@@ -161,14 +161,7 @@ BufferredNetwork_s::BufferredNetwork_s(const NEAT::Genome_s& genome, const Activ
 }
 
 const Float_t* BufferredNetwork_s::stepThis(const Float_t* const inputs) {
-    // Maybe I'm tired but memcpy is not copying `inputs` -> `_node_sb.getFront()` for some reason
-    // I'm doing something horribly wrong
-    // Set inputs
-    // memcpy(
-    //     _node_sb.getFront()+_input_start, 
-    //     inputs, 
-    //     _input_count
-    // );
+    // Copy input values
     for (size_t i = _input_start; i < _input_start+_input_count; ++i) {
         _node_sb.getFront()[i].value = inputs[i];
     }
