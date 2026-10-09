@@ -31,6 +31,10 @@ namespace NEAT {
     everything is behaving as-expected. Not an urgent concern since eyeball tests are
     enough to see nothing is catastrophically failing. 
 
+    Oversight on "add connection" mutation: "add connection" can connection from 
+    outputs and to inputs, which was something I had not realized prior. I intentionally
+    prevented this because I had assumed such connections would be invalid. 
+
 */
 
 
@@ -173,8 +177,8 @@ constexpr Parameters_s DEFAULT_PARAMETERS {
     },
     .stagnation = {
         .species_stagnation_limit = 15,
-        .population_stagnation_limit = 20, // UNUSED
-        .minimum_species_count = 2, // UNUSED
+        .population_stagnation_limit = 20,
+        .minimum_species_count = 2,
     },
     .cdf = {
         .c1=1.0, .c2=1.0, .c3=0.4,
@@ -224,25 +228,10 @@ struct GenePool_s {
 
 
     /// Constructors ///
-    inline GenePool_s(
+    GenePool_s(
         const NodeID_t inputs, const NodeID_t outputs, const bool has_bias,
         const Parameters_s parameters, const EvaluateFunc_t eval_func
-    )   : INPUT_NODE_COUNT(inputs)
-        , OUTPUT_NODE_COUNT(outputs)
-        , HAS_BIAS_NODE(has_bias)
-        , PARAMETERS(parameters)
-        , EVALUATE_GENOME(eval_func)
-        , has_been_evaluated(false)
-        , stats_up_to_date(false)
-        , max_cumulative_fitness(ERR_VAL<Float_t>())
-        , last_improved_generation(0)
-        , innovation_num(0)
-        , genome_num(0)
-        , species_num(0)
-        , generation_num(0)
-        , gene_pool()
-        , species()
-    { gene_pool.reserve(parameters.population_size); }
+    );
 
     GenePool_s(const GenePool_s& other) = delete;
 
@@ -252,8 +241,7 @@ struct GenePool_s {
     void clear();
     // Create a genome in the pool and return a reference to it
     // Node: This genome is contained in a vector, so the reference will become invalid on resizes
-    inline Genome_s& makeGenome(const bool fully_connect = false, const GenomeID_t count = 1) 
-        { return gene_pool.emplace_back(*this, fully_connect); }
+    Genome_s& makeGenome(const bool fully_connect = false);
     // Add a genome to the pool
     bool addGenome(const Genome_s genome, const GenomeID_t count = 1);
 
@@ -377,8 +365,8 @@ struct Species_s {
 
 // A single gene representing a connection
 struct Gene_s {
-    const GeneID_t INNOVATION_NUM;
-    const NodeID_t FROM, TO;
+    GeneID_t INNOVATION_NUM;
+    NodeID_t FROM, TO;
     Float_t weight;
     bool enabled;
 
@@ -452,7 +440,7 @@ struct Genome_s {
     constexpr NodeID_t getInputNodeCount() const { return POOL.INPUT_NODE_COUNT; };
     constexpr NodeID_t getOutputNodeCount() const { return POOL.OUTPUT_NODE_COUNT; };
     constexpr NodeID_t getHiddenNodeCount() const 
-        { return node_count - getInputNodeCount() - getOutputNodeCount(); };
+        { return node_count - getInputNodeCount() - getOutputNodeCount() - (hasBias() ? 1 : 0); };
     inline GeneID_t getGenomeSize() const { return genome.size(); }
     
     // Identity
@@ -517,6 +505,8 @@ struct Genome_s {
     inline NodeID_t getBiasNode() const { return POOL.getBiasNode(); };
     inline bool isInputNode(const NodeID_t n) const { return POOL.isInputNode(n); }
     inline bool isOutputNode(const NodeID_t n) const { return POOL.isOutputNode(n); }
+    inline bool isBiasNode(const NodeID_t n) const { return hasBias() && n == getBiasNode(); }
+    inline bool isHiddenNode(const NodeID_t n) const { return getHiddenNodeStart() <= n && n < getHiddenNodeEnd(); }
     // Misc
     inline NodeID_t getHiddenNodeEnd() const { return node_count; };
     inline GeneID_t getConnectionCount() const { return getGenomeSize(); };
