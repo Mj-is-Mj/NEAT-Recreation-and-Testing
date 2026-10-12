@@ -9,6 +9,13 @@ RawSwapBuffer_s::RawSwapBuffer_s(const size_t size, const bool zero)
     , _ready(false)
 { _init(zero); }
 
+RawSwapBuffer_s::~RawSwapBuffer_s() {
+    if (_front)
+        free(_front);
+    if (_back)
+        free(_back);
+}
+
 int RawSwapBuffer_s::_init(const bool zero) {
     // Allocate buffers
     if (zero) {

@@ -20,6 +20,8 @@ struct RawSwapBuffer_s {
         inline RawSwapBuffer_s() : _size(0), _front(nullptr), _back(nullptr), _ready(false) {};
         // Creates buffers with the specified size, sets contents to zero when `zero=true`
         RawSwapBuffer_s(const size_t size, const bool zero = true);
+        // Destructor to free malloc'd memory
+        ~RawSwapBuffer_s();
 
         // Resize the front and back buffers to the new size. `zero=true` ==> 
         int resize(const size_t new_size, const bool zero = true);

@@ -1,15 +1,23 @@
 #pragma once
 
 #include "randutil.hpp"
-#include <cstdlib>
-#include <cassert>
 
 #include <iostream>
-#include <limits>
 #include <ostream>
 #include <vector>
 #include <cmath>
 #include <list>
+
+// By add `#define NO_PRIVATIZATION` before you include this file, you may disable all
+// member privatiziation. Intended for testing individual internal functions.
+
+#ifdef NO_PRIVATIZATION
+    #define __PRIVATE__
+    #define __PUBLIC__
+#else
+    #define __PRIVATE__ private:
+    #define __PUBLIC__   public:
+#endif
 
 namespace NEAT {
 
@@ -189,114 +197,133 @@ constexpr Parameters_s DEFAULT_PARAMETERS {
 
 // Contains a set of genomes, handles the transition from one generation to the next
 struct GenePool_s {
-    /// Topology information ///
-    const NodeID_t INPUT_NODE_COUNT;
-    const NodeID_t OUTPUT_NODE_COUNT;
-    const bool HAS_BIAS_NODE;
+    __PRIVATE__
+        /// Evaluation ///
+        // Function used to evaluate a genome
+        const EvaluateFunc_t _EVALUATE_GENOME;
+        // Whether or not the current generation has been evaluated
+        bool _has_been_evaluated;
+        // Whether or not species stats are up to date
+        bool _stats_up_to_date;
 
-    /// Parameters ///
-    const Parameters_s PARAMETERS;
+        // The maximum fitness ever seen in the entire gene pool
+        Float_t _max_cumulative_fitness;
+        // Last generation to see improvment
+        GenerationID_t _last_improved_generation;
 
-    /// Evaluation ///
-    // Function used to evaluate a genome
-    const EvaluateFunc_t EVALUATE_GENOME;
-    // Whether or not the current generation has been evaluated
-    bool has_been_evaluated;
-    // Whether or not species stats are up to date
-    bool stats_up_to_date;
+        /// Population ///
+        // All genomes in the current generation
+        std::vector<Genome_s> _gene_pool;
+        // List of all species
+        std::list<Species_s> _species;
 
-    // The maximum fitness ever seen in the entire gene pool
-    Float_t max_cumulative_fitness;
-    // Last generation to see improvment
-    GenerationID_t last_improved_generation;
-
-    /// Population ///
-    // All genomes in the current generation
-    std::vector<Genome_s> gene_pool;
-    // List of all species
-    std::list<Species_s> species;
-
-    /// Mutables ///
-    mutable GeneID_t innovation_num;
-    mutable GenomeID_t genome_num;
-    mutable SpeciesID_t species_num;
-    mutable GenerationID_t generation_num;
-    inline GeneID_t getNextInnovationNumber() const { return innovation_num++; }
-    inline GeneID_t getNextGenomeNumber() const { return genome_num++; }
-    inline GeneID_t getNextSpeciesNumber() const { return species_num++; }
-    inline GeneID_t getNextGenerationNumber() const { return generation_num++; }
+        /// Identifiers ///
+        mutable GeneID_t _innovation_num;
+        mutable GenomeID_t _genome_num;
+        mutable SpeciesID_t _species_num;
+        mutable GenerationID_t _generation_num;
+        // The above are considered mutable because they can only be incremented, and such action
+        // has no consequence (unltil integer overflow, in which case consequences are likely small). 
 
 
-    /// Constructors ///
-    GenePool_s(
-        const NodeID_t inputs, const NodeID_t outputs, const bool has_bias,
-        const Parameters_s parameters, const EvaluateFunc_t eval_func
-    );
+        /// Evaluation ///
+        void _updateSpeciesFitnessStats();
+        void _allotOffspring();
 
-    GenePool_s(const GenePool_s& other) = delete;
+        /// Culling ///
+        void _cullSpecies();
+        void _cullFromSpecies(Species_s& spec);
+        void _cullFromAllSpecies();
+
+        /// Reproduction ///
+        void _reproduce(const Species_s& spec, std::vector<Genome_s>& child_gene_pool);
+        std::vector<Genome_s> _reproduce();
+        GenomeID_t _selectFromOtherSpecies(const Species_s& given);
+
+        /// Speciation ///
+        void _selectRepresentatives();
+        void _takeNewMembers(
+            Species_s& spec, 
+            std::list<GenomeID_t>& remaining_child_genome_ids,
+            const std::vector<Genome_s>& child_gene_pool
+        );
+        void _forceSingleSpecies();
+        void _speciate(const std::vector<Genome_s>& child_gene_pool);
+        
+
+    __PUBLIC__
+        /// Topology information ///
+        const NodeID_t INPUT_NODE_COUNT;
+        const NodeID_t OUTPUT_NODE_COUNT;
+        const bool HAS_BIAS_NODE;
+        /// Parameters ///
+        const Parameters_s PARAMETERS;
 
 
-    /// Initialization ///
-    // Clears all genomes and sepcies, resets `innovation_num` and other mutables, etc.
-    void clear();
-    // Create a genome in the pool and return a reference to it
-    // Node: This genome is contained in a vector, so the reference will become invalid on resizes
-    Genome_s& makeGenome(const bool fully_connect = false);
-    // Add a genome to the pool
-    bool addGenome(const Genome_s genome, const GenomeID_t count = 1);
+        // Basic constructor
+        GenePool_s(
+            const NodeID_t inputs, const NodeID_t outputs, const bool has_bias,
+            const Parameters_s parameters, const EvaluateFunc_t eval_func
+        );
+        // No copy constructor
+        GenePool_s(const GenePool_s& other) = delete;
 
-    
-    /// Nodes ///
-    // Node start/end
-    constexpr NodeID_t getInputNodeStart() const { return 0; };
-    constexpr NodeID_t getInputNodeEnd() const {return INPUT_NODE_COUNT; };
-    constexpr NodeID_t getOutputNodeStart() const { return getInputNodeEnd() + (HAS_BIAS_NODE ? 1 : 0); };
-    constexpr NodeID_t getOutputNodeEnd() const { return getOutputNodeStart() + OUTPUT_NODE_COUNT; };
-    constexpr NodeID_t getBiasNode() const { return HAS_BIAS_NODE ? getInputNodeEnd() : ERR_VAL<NodeID_t>(); };
-    // Random getters
-    NodeID_t getRandomInputNodeID() const;
-    NodeID_t getRandomOutputNodeID() const;
-    // Other node stuff
-    constexpr NodeID_t getPredefNodesEnd() const { return getOutputNodeEnd(); };
-    constexpr bool isInputNode(const NodeID_t n) const 
-        { return getInputNodeStart() <= n && n < getInputNodeEnd(); }
-    constexpr bool isOutputNode(const NodeID_t n) const 
-        { return getOutputNodeStart() <= n && n < getOutputNodeEnd(); }
-    constexpr bool isBiasNode(const NodeID_t n) const
-        { return !IS_ERR(n) && n == getBiasNode(); }
-    NodeType_e getNodeType(const NodeID_t n) const;
+        /// Genetic getters ///
+        constexpr const std::vector<Genome_s>& getGenePool() const { return _gene_pool; }
+        constexpr const std::list<Species_s>& getSpeciesList() const { return _species; }
+        /// Mutable-getters ///
+        constexpr GeneID_t getInnovationNumber() const { return _innovation_num; }
+        constexpr GeneID_t getGenomeNumber() const { return _genome_num; }
+        constexpr GeneID_t getSpeciesNumber() const { return _species_num; }
+        constexpr GeneID_t getGenerationNumber() const { return _generation_num; }
+        constexpr EvaluateFunc_t getEvaluationFunction() const { return _EVALUATE_GENOME; }
+        /// Getters for node section start/end and bias node ///
+        constexpr NodeID_t getInputNodeStart() const { return 0; };
+        constexpr NodeID_t getInputNodeEnd() const {return INPUT_NODE_COUNT; };
+        constexpr NodeID_t getOutputNodeStart() const { return getInputNodeEnd() + (HAS_BIAS_NODE ? 1 : 0); };
+        constexpr NodeID_t getOutputNodeEnd() const { return getOutputNodeStart() + OUTPUT_NODE_COUNT; };
+        constexpr bool hasBiasNode() const { return HAS_BIAS_NODE; }
+        constexpr NodeID_t getBiasNode() const { return HAS_BIAS_NODE ? getInputNodeEnd() : ERR_VAL<NodeID_t>(); };
+        constexpr NodeID_t getHiddenNodeStart() const { return getOutputNodeEnd(); }
+        /// Random getters ///
+        NodeID_t getRandomInputNodeID() const;
+        NodeID_t getRandomOutputNodeID() const;
+        // No functions for hidden nodes, as hidden nodes are only known in individual genomes
 
-    /// DEBUGGING ///
-    friend std::ostream& operator<<(std::ostream& out, const GenePool_s& pool);
-    void printNode(std::ostream& out, const NodeID_t n) const;
+        /// Node validation and debugging ///
+        constexpr bool isInputNode(const NodeID_t n) const 
+            { return getInputNodeStart() <= n && n < getInputNodeEnd(); }
+        constexpr bool isOutputNode(const NodeID_t n) const 
+            { return getOutputNodeStart() <= n && n < getOutputNodeEnd(); }
+        constexpr bool isBiasNode(const NodeID_t n) const
+            { return HAS_BIAS_NODE && n == getBiasNode(); }
 
-    /// CULLING ///
-    void evaluatePopulation();
-    void updateSpeciesFitnessStats();
-    void allotOffspring();
-    void cullSpecies();
-    void cullFromSpecies(Species_s& spec);
-    void cullFromAllSpecies();
+        /// Getters for new unique identifiers ** Might change to non-const and make identifiers non-mutable ///
+        constexpr GeneID_t getNextInnovationNumber() const { return _innovation_num++; }
+        constexpr GeneID_t getNextGenomeNumber() const { return _genome_num++; }
+        constexpr GeneID_t getNextSpeciesNumber() const { return _species_num++; }
+        constexpr GeneID_t getNextGenerationNumber() const { return _generation_num++; }
 
-    // REPRODUCTION AND SPECIATION///
-    void reproduce(
-        const Species_s& spec, 
-        std::vector<Genome_s>& child_gene_pool
-    );
-    GenomeID_t selectFromOtherSpecies(const Species_s& given);
-    std::vector<Genome_s> reproduce();
-    void selectRepresentatives();
-    void takeNewMembers(
-        Species_s& spec, 
-        std::list<GenomeID_t>& remaining_child_genome_ids,
-        const std::vector<Genome_s>& child_gene_pool
-    );
-    // If there are no species, add all genomes to a new species
-    void forceSingleSpecies();
-    void speciate(const std::vector<Genome_s>& child_gene_pool);
+        // Evaluates the genome. Does not set the genome's fitness value. 
+        // Returns `ERR_VAL<Float_T>()` if no eval function was provided. 
+        constexpr Float_t evaluateGenome(const Genome_s& genome) const { return _EVALUATE_GENOME ? _EVALUATE_GENOME(genome) : ERR_VAL<Float_t>(); }
+        void evaluatePopulation();
 
-    /// "MAIN" FUNCTION ///
-    void newGeneration();
+        // Clears all genomes and sepcies, resets `innovation_num` and other mutables, etc.
+        void clear();
+        // Create a genome in the pool and return a reference to it
+        // Node: This genome is contained in a vector, so the reference will become invalid on resizes
+        Genome_s& makeGenome(const bool fully_connect = false);
+        // Add a genome to the pool
+        bool addGenome(const Genome_s genome, const GenomeID_t count = 1);
+
+        /// Debugging /// 
+        NodeType_e getNodeType(const NodeID_t n) const;
+        friend std::ostream& operator<<(std::ostream& out, const GenePool_s& pool);
+        void printNode(std::ostream& out, const NodeID_t n) const;
+
+        /// "Main" function ///
+        void newGeneration();
 };
 
 // A single species within a `GenePool`
@@ -330,9 +357,9 @@ struct Species_s {
     inline Species_s(const GenePool_s& POOL, const GenomeID_tmp... genome_ids)
             : POOL(POOL)
             , ID(POOL.getNextSpeciesNumber())
-            , last_living_generation(POOL.generation_num)
-            , generation_of_inception(POOL.generation_num)
-            , last_improved_generation(POOL.generation_num)
+            , last_living_generation(POOL.getGenerationNumber())
+            , generation_of_inception(POOL.getGenerationNumber())
+            , last_improved_generation(POOL.getGenerationNumber())
             , cumulative_max_fitness(ERR_VAL<Float_t>())
             , current_max_fitness(ERR_VAL<Float_t>())
             , current_avg_fitness(ERR_VAL<Float_t>())
@@ -406,7 +433,7 @@ struct Genome_s {
     std::vector<Gene_s> genome;
 
 
-    /// CONSTRUCTORS ///
+    /// Constructors ///
     
     // Copy constructor
     Genome_s(const Genome_s& other);
@@ -432,15 +459,15 @@ struct Genome_s {
         { return Genome_s(POOL, POOL.getNextGenomeNumber(), PARENT_A, PARENT_B, node_count, genome); }
 
 
-    /// GETTERS ///
+    /// Getters ///
 
     // Counts/sizes
-    constexpr bool hasBias() const { return POOL.HAS_BIAS_NODE; }; 
+    constexpr bool hasBiasNode() const { return POOL.hasBiasNode(); }; 
     constexpr NodeID_t getNodeCount() const { return node_count; };
     constexpr NodeID_t getInputNodeCount() const { return POOL.INPUT_NODE_COUNT; };
     constexpr NodeID_t getOutputNodeCount() const { return POOL.OUTPUT_NODE_COUNT; };
     constexpr NodeID_t getHiddenNodeCount() const 
-        { return node_count - getInputNodeCount() - getOutputNodeCount() - (hasBias() ? 1 : 0); };
+        { return node_count - getInputNodeCount() - getOutputNodeCount() - (hasBiasNode() ? 1 : 0); };
     inline GeneID_t getGenomeSize() const { return genome.size(); }
     
     // Identity
@@ -461,14 +488,14 @@ struct Genome_s {
     bool connectionExists(const NodeID_t from, const NodeID_t to);
     
 
-    /// MODIFICIATION ///
+    /// Modifications ///
     void addConnection(
         const NodeID_t from, const NodeID_t to, 
         const Float_t weight = 1, const bool enabled = true
     );
     void addNode(Gene_s& connection);
 
-    /// MUTATIONS ///
+    /// Mutations ///
     inline Float_t getRandomWeight() const { 
         return (RandUtil::randF<Float_t>()-0.5)
         *(2*POOL.PARAMETERS.reproduction.mutation.weight_random_range);
@@ -485,15 +512,15 @@ struct Genome_s {
     void mutatePerturbWeight();
     void mutate();
 
-    /// REPRODUCTION ///
+    /// Reproduction ///
     static Genome_s makeMutatedClone(const Genome_s& parent);
     static Genome_s crossover(const Genome_s& pA, const Genome_s& pB);
 
-    /// METRICS ///
+    /// Metrics/evaluation ///
     static Float_t compatibilityDistance(const Genome_s& A, const Genome_s& B);
     Float_t evaluate();
     
-    /// ALIASES ///
+    /// Aliases ///
     // Calls to `GenePool` member functions
     inline NodeID_t getRandomInputNodeID() const { return POOL.getRandomInputNodeID(); };
     inline NodeID_t getRandomOutputNodeID() const { return POOL.getRandomOutputNodeID(); };
@@ -501,23 +528,23 @@ struct Genome_s {
     inline NodeID_t getInputNodeEnd() const { return POOL.getInputNodeEnd(); };
     inline NodeID_t getOutputNodeStart() const { return POOL.getOutputNodeStart(); };
     inline NodeID_t getOutputNodeEnd() const { return POOL.getOutputNodeEnd(); };
-    inline NodeID_t getHiddenNodeStart() const { return POOL.getPredefNodesEnd(); };
+    inline NodeID_t getHiddenNodeStart() const { return POOL.getHiddenNodeStart(); };
+    inline NodeID_t getHiddenNodeEnd() const { return node_count; };
     inline NodeID_t getBiasNode() const { return POOL.getBiasNode(); };
     inline bool isInputNode(const NodeID_t n) const { return POOL.isInputNode(n); }
     inline bool isOutputNode(const NodeID_t n) const { return POOL.isOutputNode(n); }
-    inline bool isBiasNode(const NodeID_t n) const { return hasBias() && n == getBiasNode(); }
+    inline bool isBiasNode(const NodeID_t n) const { return hasBiasNode() && n == getBiasNode(); }
     inline bool isHiddenNode(const NodeID_t n) const { return getHiddenNodeStart() <= n && n < getHiddenNodeEnd(); }
     // Misc
-    inline NodeID_t getHiddenNodeEnd() const { return node_count; };
     inline GeneID_t getConnectionCount() const { return getGenomeSize(); };
     inline GeneID_t getRandomConnectionID() const { return getRandomGeneID(); }
     inline void addBias(const NodeID_t to, const Float_t weight = 1, const bool enabled = true)
-        { assert(hasBias()); addConnection(getBiasNode(), to, weight, enabled); }
+        { assert(hasBiasNode()); addConnection(getBiasNode(), to, weight, enabled); }
     inline void mutateEnableConnection() { mutateSetConnection(true); };
     inline void mutateDisableConnection() { mutateSetConnection(false); };
     inline Genome_s makeMutatedClone() { return makeMutatedClone(*this); }
     
-    /// DEBUGGING ///
+    /// Debugging ///
     friend std::ostream& operator<<(std::ostream& out, const Genome_s& genome);
     void simplifiedPrint(std::ostream& out, const bool print_genome = true) const;
     inline void printNode(std::ostream& out, const NodeID_t n) const { POOL.printNode(out, n); }

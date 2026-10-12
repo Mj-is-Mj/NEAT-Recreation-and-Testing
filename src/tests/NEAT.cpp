@@ -1,7 +1,8 @@
-#include "../inc/NEAT.hpp"
 #include "randutil.hpp"
 #include <cstdlib>
 
+#define NO_PRIVATIZATION
+#include "../inc/NEAT.hpp"
 using namespace NEAT;
 
 auto params_more_mutations = DEFAULT_PARAMETERS;
@@ -22,7 +23,7 @@ void testMakeGenome(NodeID_t in, NodeID_t out, bool bias) {
 
     pool.makeGenome(true);
 
-    std::cout << pool.gene_pool.back();
+    std::cout << pool._gene_pool.back();
     std::cin.get();
 }
 
@@ -49,7 +50,7 @@ void testMakeGenePoolAndMutate(NodeID_t in, NodeID_t out, bool bias, Parameters_
     std::cout << pool;
 
     for (size_t i = 0; i < 10; ++i) {
-        for (auto& genome : pool.gene_pool) {
+        for (auto& genome : pool._gene_pool) {
             genome.mutate();
         }
     }
@@ -58,7 +59,7 @@ void testMakeGenePoolAndMutate(NodeID_t in, NodeID_t out, bool bias, Parameters_
 }
 
 void printCompatibilityDistanceTable(const GenePool_s& pool) {
-    const size_t N = pool.gene_pool.size();
+    const size_t N = pool._gene_pool.size();
 
     GenomeID_t max_dist_A = 0;
     GenomeID_t max_dist_B = 0;
@@ -75,7 +76,7 @@ void printCompatibilityDistanceTable(const GenePool_s& pool) {
 
     printf("|-" BFORMAT "-");
     for (size_t i = 0; i < N; ++i)
-        printf("| " DFORMAT " ", pool.gene_pool[i].ID);
+        printf("| " DFORMAT " ", pool._gene_pool[i].ID);
     printf("|\n");
 
     for (size_t i = 0; i < N; ++i) {
@@ -83,24 +84,24 @@ void printCompatibilityDistanceTable(const GenePool_s& pool) {
             printf("|-" BFORMAT "-");
         printf("|\n");
 
-        printf("| " DFORMAT, pool.gene_pool[i].ID);
+        printf("| " DFORMAT, pool._gene_pool[i].ID);
         for (size_t j = 0; j < N; ++j) {
             Float_t dist = Genome_s::compatibilityDistance(
-                pool.gene_pool[i],
-                pool.gene_pool[j]
+                pool._gene_pool[i],
+                pool._gene_pool[j]
             );
             printf(" | " FFORMAT, dist);
 
             if (dist > max_dist) {
                 max_dist = dist;
-                max_dist_A = pool.gene_pool[i].ID;
-                max_dist_B = pool.gene_pool[j].ID;
+                max_dist_A = pool._gene_pool[i].ID;
+                max_dist_B = pool._gene_pool[j].ID;
             }
 
             if (dist > 0 && dist < min_dist) {
                 min_dist = dist;
-                min_dist_A = pool.gene_pool[i].ID;
-                min_dist_B = pool.gene_pool[j].ID;
+                min_dist_A = pool._gene_pool[i].ID;
+                min_dist_B = pool._gene_pool[j].ID;
             }
         }
         printf(" |\n");
@@ -202,7 +203,7 @@ void testCrossover(NodeID_t in, NodeID_t out, bool bias, Parameters_s params) {
     std::cout << pool;
 
     for (size_t i = 0; i < 10; ++i) {
-        for (auto& genome : pool.gene_pool) {
+        for (auto& genome : pool._gene_pool) {
             genome.mutate();
         }
     }
@@ -210,8 +211,8 @@ void testCrossover(NodeID_t in, NodeID_t out, bool bias, Parameters_s params) {
     std::cout << pool;
 
     for (size_t i = 0; i < 10; ++i) {
-        const Genome_s A = pool.gene_pool[RandUtil::randUpTo(pool.gene_pool.size())];
-        const Genome_s B = pool.gene_pool[RandUtil::randUpTo(pool.gene_pool.size())];
+        const Genome_s A = pool._gene_pool[RandUtil::randUpTo(pool._gene_pool.size())];
+        const Genome_s B = pool._gene_pool[RandUtil::randUpTo(pool._gene_pool.size())];
         const Genome_s CHILD = Genome_s::crossover(A,B);
 
         validateCrossover(A,B,CHILD);

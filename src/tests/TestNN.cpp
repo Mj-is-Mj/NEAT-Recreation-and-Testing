@@ -65,6 +65,7 @@ int main() {
 
     const NEAT::Genome_s BASE(pool, true);
     pool.addGenome(BASE, 3);
+    pool.evaluatePopulation();
     std::cout << pool;
 
 
@@ -74,14 +75,11 @@ int main() {
         std::cout << pool << std::endl;
     }
 
-    pool.cullFromAllSpecies();
-    pool.updateSpeciesFitnessStats();
-
     std::cout << pool << std::endl;
 
     dbg = true;
 
-    for (auto& genome : pool.gene_pool) {
-        genome.evaluate();
+    for (const auto& genome : pool.getGenePool()) {
+        pool.evaluateGenome(genome);
     }
 }

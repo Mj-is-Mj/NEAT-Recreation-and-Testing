@@ -1,6 +1,8 @@
 
-#include "../inc/NEAT.hpp"
 #include "../inc/randutil.hpp"
+
+#define NO_PRIVATIZATION
+#include "../inc/NEAT.hpp"
 using namespace NEAT;
 
 constexpr Parameters_s LOCAL_PARAMS {
@@ -61,26 +63,26 @@ int main() {
 
     for (size_t i = 0; i < 8; ++i) {
         // Mutate all
-        for (auto& genome : pool.gene_pool) {
+        for (auto& genome : pool._gene_pool) {
             genome.mutate();
         }
 
         // Select pair near end of gene pool
         GenomeID_t a,b;
         RandUtil::randUniquePair(a,b,GenomeID_t{4});
-        a += pool.gene_pool.size() - 4;
-        b += pool.gene_pool.size() - 4;
+        a += pool._gene_pool.size() - 4;
+        b += pool._gene_pool.size() - 4;
 
         // Crossover pair and add to end
         pool.addGenome(
             Genome_s::crossover(
-                pool.gene_pool[a],
-                pool.gene_pool[b]
+                pool._gene_pool[a],
+                pool._gene_pool[b]
             )
         );
     }
 
-    pool.has_been_evaluated = false;
+    pool._has_been_evaluated = false;
     pool.evaluatePopulation();
     std::cout << pool;
 

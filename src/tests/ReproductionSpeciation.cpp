@@ -1,6 +1,5 @@
-
+#define NO_PRIVATIZATION
 #include "../inc/NEAT.hpp"
-#include <cmath>
 using namespace NEAT;
 
 constexpr Parameters_s LOCAL_PARAMS {
@@ -73,8 +72,8 @@ int main() {
             std::cout << pool << std::endl;
     }
 
-    pool.cullFromAllSpecies();
-    pool.updateSpeciesFitnessStats();
+    pool._cullFromAllSpecies();
+    pool._updateSpeciesFitnessStats();
 
     std::cout << pool << std::endl;
 }
