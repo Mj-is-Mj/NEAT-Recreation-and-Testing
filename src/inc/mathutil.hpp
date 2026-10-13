@@ -17,8 +17,8 @@ struct Constants {
 template<typename f_tmp>
 inline f_tmp powt(const f_tmp b, const f_tmp e);
 
-template<> inline float powt<float>(const float b, const float e) { return powf(b,e); };
-template<> inline double powt<double>(const double b, const double e) { return pow(b,e); };
+template<> constexpr float powt<float>(const float b, const float e) { return powf(b,e); };
+template<> constexpr double powt<double>(const double b, const double e) { return pow(b,e); };
 
 
 

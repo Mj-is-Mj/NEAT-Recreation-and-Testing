@@ -20,29 +20,38 @@ typedef const Float_t* (*StepFunc_t)(void* const network, const Float_t* const i
 
 // Activation functions
 namespace Activations {
+    // Does nothing, just nullptr
+    constexpr ActivateFunc_t linear = nullptr;
+
     Float_t sigmoid(const Float_t x);
     Float_t ReLU(const Float_t x);
 
-    // Leaky ReLU where \alpha equals `(Float_t)num_tmp/(Float_t)div_tmp`
-    template<size_t numerator_tmp, size_t divisor_tmp>
-    Float_t leakyReLU(const Float_t x) { 
-        static_assert(divisor_tmp != 0, "leakyReLU: Alpha divisor must not be zero");
-        constexpr Float_t alpha = (Float_t)numerator_tmp / (Float_t)divisor_tmp;
-        return (x < 0 ? alpha*x : x);
-    }
+    // Activations with floating-point templated parameters require C++20 or greater
+    #if __cplusplus >= 202002L
+        // Leaky ReLU where alpha is a templated paramter
+        template<Float_t alpha_tmp>
+        Float_t leakyReLU(const Float_t x) { 
+            return (x < 0 ? alpha_tmp*x : x);
+        }
 
-    // A version of sigmoid where the base of the exponential is repersented using
-    // a numerator and divisor
-    template<size_t numerator_tmp, size_t divisor_tmp>
-    Float_t sigmoidB(const Float_t x) {
-        static_assert(divisor_tmp != 0, "sigmoidB: Base divisor must not be zero");
-        constexpr Float_t base = (Float_t)numerator_tmp / (Float_t)divisor_tmp;
-        constexpr Float_t e = Math::Constants<Float_t>::EULER;
-        return Float_t{1} / (Float_t{1} + Math::powt(e,x));
-    }
-
-    // Does nothing, just nullptr
-    constexpr ActivateFunc_t linear = nullptr;
+        // A version of sigmoid where the base of the exponential is templated
+        // `sigmoidB<B> = 1 / (1 + B^(-x))`
+        template<Float_t base_tmp>
+        Float_t sigmoidB(const Float_t x) {
+            static_assert(base_tmp <= 0, "sigmoidB: base of exponential must be positive");
+            constexpr Float_t base_inv = 1.0 / base_tmp;
+            return Float_t{1} / (Float_t{1} + Math::powt(base_tmp,x));
+        }
+        // A version of sigmoid where the weight of x is tempalted
+        // `sigmoidX<W>(x) == sigmoid(W*x)`
+        // The "steepened sigmoid" from the paper is equivalent to `sigmoidX<4.9>`
+        template<Float_t weight>
+        Float_t sigmoidX(const Float_t x) {
+            static_assert(weight != 0, "sigmoidX: weight must be nonzero");
+            constexpr Float_t base_inv = Math::powt(Math::Constants<Float_t>::EULER, -weight);
+            return Float_t{1} / (Float_t{1} + Math::powt(base_inv, x));
+        }
+    #endif
 }
 
 

@@ -5,8 +5,8 @@ namespace NN {
 
 namespace Activations {
     Float_t sigmoid(const Float_t x) {
-        constexpr Float_t e = Math::Constants<Float_t>::EULER;
-        return Float_t{1} / (Float_t{1} + Math::powt(e,-x));
+        constexpr Float_t e_inv = 1.0 / Math::Constants<Float_t>::EULER;
+        return Float_t{1} / (Float_t{1} + Math::powt(e_inv,x));
     }
 
     Float_t ReLU(const Float_t x) {

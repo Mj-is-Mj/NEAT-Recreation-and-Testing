@@ -1,6 +1,8 @@
 #include "../inc/NN.hpp"
 #include "../inc/NEAT.hpp"
 
+static_assert(__cplusplus >= 202002L, "TestNN.cpp requires C++20 or greater");
+
 NEAT::Parameters_s LOCAL_PARAMS = NEAT::DEFAULT_PARAMETERS;
 
 bool dbg = false;
@@ -10,8 +12,8 @@ bool dbg = false;
 NEAT::Float_t xor_eval(const NEAT::Genome_s& genome) {
     NN::SequentialNetwork_s network(
         genome, 
-        NN::Activations::sigmoid,
-        NN::Activations::sigmoid
+        NN::Activations::sigmoidX<NN::Float_t{4.9}>,
+        NN::Activations::sigmoidX<NN::Float_t{4.9}>
     );
 
     NN::Float_t inputs[3] = {0,0,1.f}; // inputs[2] is never modified (bias node)
@@ -21,9 +23,6 @@ NEAT::Float_t xor_eval(const NEAT::Genome_s& genome) {
     NN::Float_t min = .5f;
     NN::Float_t max = -.5f;
     bool failed_any = false;
-
-    if (genome.getID() == 2376)
-        min += 0;
 
     // For each possible input
     for (size_t i = 0; i < 4; ++i) {
