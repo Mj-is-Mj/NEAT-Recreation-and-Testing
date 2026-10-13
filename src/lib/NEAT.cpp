@@ -594,7 +594,7 @@ void GenePool_s::printNode(std::ostream& out, const NodeID_t n) const {
         case NodeType_e::HIDDEN:
             out << n << "h";
             return;
-        case NodeType_e::ERROR:
+        default:
             out << "ERR";
             return;
     }
@@ -708,28 +708,39 @@ NodeID_t Genome_s::getRandomNodeID() const {
     return RandUtil::randUpTo(node_count);
 }
 
-NodeID_t Genome_s::getRandomHiddenNodeID() const {
-    return RandUtil::randRange(getHiddenNodeStart(), getHiddenNodeEnd());
-}
+NodeID_t Genome_s::getRandomNodeOfTypes(const NodeTypes_t types) {
+    if ((types & NodeType_e::ALL) == 0) return ERR_VAL<NodeID_t>();
 
-NodeID_t Genome_s::getRandomInputOrHiddenNodeID() const {
-    const NodeID_t N = RandUtil::randUpTo(getInputNodeCount() + getHiddenNodeCount());
-    if (N < getInputNodeCount()) {
-        return getInputNodeStart() + N;
-    }
-    else {
-        return getHiddenNodeStart() + N - getInputNodeCount();
-    }
-}
+    NodeID_t available_count = (0
+        + ((NodeType_e::BIAS & types) && hasBiasNode() ? 1 : 0)
+        + (NodeType_e::INPUT & types ? getInputNodeCount() : 0)
+        + (NodeType_e::OUTPUT & types ? getOutputNodeCount() : 0)
+        + (NodeType_e::HIDDEN & types ? getHiddenNodeCount() : 0)
+    );
 
-NodeID_t Genome_s::getRandomOutputOrHiddenNodeID() const {
-    const NodeID_t N = RandUtil::randUpTo(getOutputNodeCount() + getHiddenNodeCount());
-    if (N < getOutputNodeCount()) {
-        return getOutputNodeStart() + N;
+    if (available_count <= 0) return ERR_VAL<NodeID_t>();
+
+    NodeID_t rand = RandUtil::randUpTo(available_count);
+
+    // Check if bias node
+    if ((NodeType_e::BIAS & types) && hasBiasNode()) {
+        if (rand == 0) return getBiasNode();
+        --rand;
     }
-    else {
-        return getHiddenNodeStart() + N - getOutputNodeCount();
+    // Check if input node
+    if (NodeType_e::INPUT & types) {
+        if (rand < getInputNodeCount())
+            return rand + getInputNodeStart();
+        rand -= getInputNodeCount();
     }
+    // Check if output node
+    if (NodeType_e::OUTPUT & types) {
+        if (rand < getOutputNodeCount())
+            return rand + getOutputNodeStart();
+        rand -= getOutputNodeCount();
+    }
+    // Else, must be hidden node
+    return rand + getHiddenNodeStart();
 }
 
 GeneID_t Genome_s::getRandomGeneID() const {
@@ -763,8 +774,6 @@ void Genome_s::addNode(Gene_s& connection) {
     addConnection(connection.FROM, node_count, 1, true);
     // The connection leading from the new node gets the old connection's weight
     addConnection(node_count, connection.TO, connection.weight, true);
-    // ** Not specified in the paper: Does the above connection recieve `connection.enabled`,
-    // or is the connection set to be enabled or disabled upon craetion?
 
     ++node_count;
 }
@@ -778,8 +787,8 @@ bool Genome_s::mutateAddConnection() {
 
     NodeID_t from, to;
     for (size_t i = 0; i < MAX_TRIES_ADD_CONNECTION; ++i) {
-        from = getRandomInputOrHiddenNodeID();
-        to   = getRandomOutputOrHiddenNodeID();
+        from = getRandomNodeOfTypes(NodeType_e::ALL ^ NodeType_e::BIAS);
+        to   = getRandomNodeOfTypes(NodeType_e::ALL ^ NodeType_e::BIAS);
 
         if (connectionExists(from, to)) continue;
 
@@ -806,7 +815,8 @@ bool Genome_s::mutateAddBias() {
 
     NodeID_t to;
     for (size_t i = 0; i < MAX_TRIES_ADD_CONNECTION; ++i) {
-        to   = getRandomOutputOrHiddenNodeID();
+        // All except bias node
+        to = getRandomNodeOfTypes(NodeType_e::ALL ^ NodeType_e::BIAS);
 
         if (connectionExists(BIAS, to)) continue;
 

@@ -38,11 +38,6 @@ namespace NEAT {
     real "failable" tests. Tests will absolutely need to be redone soon to ensure 
     everything is behaving as-expected. Not an urgent concern since eyeball tests are
     enough to see nothing is catastrophically failing. 
-
-    Oversight on "add connection" mutation: "add connection" can connection from 
-    outputs and to inputs, which was something I had not realized prior. I intentionally
-    prevented this because I had assumed such connections would be invalid. 
-
 */
 
 
@@ -89,12 +84,14 @@ typedef Float_t (*EvaluateFunc_t)(const Genome_s&);
 
 // Types of nodes
 enum NodeType_e {
-    INPUT,
-    BIAS,
-    OUTPUT,
-    HIDDEN,
-    ERROR,
+    ERROR  = 0,
+    INPUT  = 1<<0,
+    BIAS   = 1<<1,
+    OUTPUT = 1<<2,
+    HIDDEN = 1<<3,
+    ALL    = 0b1111
 };
+typedef decltype(NodeType_e::ALL | NodeType_e::ALL) NodeTypes_t;
 
 // Parameters for `GenePool`
 struct Parameters_s {
@@ -478,9 +475,7 @@ struct Genome_s {
     
     // Random getters
     NodeID_t getRandomNodeID() const;
-    NodeID_t getRandomHiddenNodeID() const;
-    NodeID_t getRandomInputOrHiddenNodeID() const;
-    NodeID_t getRandomOutputOrHiddenNodeID() const;
+    NodeID_t getRandomNodeOfTypes(const NodeTypes_t types);
     GeneID_t getRandomGeneID() const;
     inline Gene_s& getRandomGenome() { return genome[getRandomGeneID()]; }
     
