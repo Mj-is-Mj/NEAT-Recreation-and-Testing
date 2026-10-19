@@ -40,7 +40,7 @@ namespace Activations {
         Float_t sigmoidB(const Float_t x) {
             static_assert(base_tmp <= 0, "sigmoidB: base of exponential must be positive");
             constexpr Float_t base_inv = 1.0 / base_tmp;
-            return Float_t{1} / (Float_t{1} + Math::powt(base_tmp,x));
+            return Float_t{1} / (Float_t{1} + Math::pow(base_tmp,x));
         }
         // A version of sigmoid where the weight of x is tempalted
         // `sigmoidX<W>(x) == sigmoid(W*x)`
@@ -48,8 +48,8 @@ namespace Activations {
         template<Float_t weight>
         Float_t sigmoidX(const Float_t x) {
             static_assert(weight != 0, "sigmoidX: weight must be nonzero");
-            constexpr Float_t base_inv = Math::powt(Math::Constants<Float_t>::EULER, -weight);
-            return Float_t{1} / (Float_t{1} + Math::powt(base_inv, x));
+            constexpr Float_t base_inv = Math::pow(Math::Constants<Float_t>::EULER, -weight);
+            return Float_t{1} / (Float_t{1} + Math::pow(base_inv, x));
         }
     #endif
 }
