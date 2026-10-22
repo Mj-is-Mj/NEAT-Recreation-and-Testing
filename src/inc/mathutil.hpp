@@ -15,7 +15,7 @@ struct Constants {
 
 // Power function
 template<typename f_tmp>
-inline f_tmp pow(const f_tmp b, const f_tmp e) { return std::pow(b, e); }
+constexpr f_tmp pow(const f_tmp b, const f_tmp e) { return std::pow(b, e); }
 
 // Basic trig functions
 template<typename f_tmp>

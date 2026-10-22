@@ -45,7 +45,7 @@
         // by Alexis P. Wieland
 
         // Effective force of pole i on the cart
-        F_i = m_pi*l_i*sin(th_i) + (3/4)*m_pi*cos(th_i)*((u_pi*dth_i)/(m_pi*l_i) + g*sin(th_i))
+        F_i = m_pi*l_i*(dth_i^2)*sin(th_i) + (3/4)*m_pi*cos(th_i)*((u_pi*dth_i)/(m_pi*l_i) + g*sin(th_i))
         
         // Effective mass of pole i
         m_epi = m_i*(1 - (3/4)*cos^2(th_i))
@@ -54,7 +54,7 @@
         ddx = (F - u_c*sgn(dx) + sum(i=1,N)(F_i)) / (m_c + sum(i=1,N)(m_epi))
 
         // Angular accelleration of pole i
-        ddth_i = -3/(4*l_i)*(ddx*cos(th_i) + g*sin(th_i) + (u_pi*dth_i)/(m_pi*l_i))
+        ddth_i = (-3/(4*l_i))*(ddx*cos(th_i) + g*sin(th_i) + (u_pi*dth_i)/(m_pi*l_i))
     
     Other notes:
         When implementing pole-balancing with RK4, we don't use the `t`/"time" parameter
@@ -149,6 +149,11 @@ namespace PoleProblems {
                 , poles(other.poles)
             {}
 
+            State_s(const CartState_s& other_cart, const std::vector<PoleState_s> other_poles)
+                : cart(other_cart)
+                , poles(other_poles)
+            {}
+
             State_s operator+(const State_s& other) const;
             State_s operator*(const Float_t scale) const;
             inline State_s& operator+=(const State_s& other) { *this = *this + other; return *this; }
@@ -178,9 +183,10 @@ namespace PoleProblems {
                 , PARAMTERS(params)
             {}
 
+            constexpr const State_s& getState() { return _state; }
 
             void step(const Float_t cart_force, const Float_t step_size);
-            constexpr void step(const Float_t cart_force) { step(cart_force, PARAMTERS.step_size); }
+            inline void step(const Float_t cart_force) { step(cart_force, PARAMTERS.step_size); }
 
 
     };

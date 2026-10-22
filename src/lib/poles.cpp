@@ -53,7 +53,7 @@ CartWithPoles_s::State_s CartWithPoles_s::_ROC(const Float_t cart_force, const S
         const State_s::PoleState_s& pole_state = current_state.poles[i];
 
         effective_pole_force += (
-            (pole.mass * pole.length * Math::sin(pole_state.theta))
+            (pole.mass * pole.length * pole_state.dtheta*pole_state.dtheta * Math::sin(pole_state.theta))
             + (0.75*pole.mass*Math::cos(pole_state.theta))
             * (
                 (pole.hinge_friction*pole_state.dtheta) / (pole.mass*pole.length)
@@ -78,29 +78,30 @@ CartWithPoles_s::State_s CartWithPoles_s::_ROC(const Float_t cart_force, const S
     );
 
     // Pole angular accelerations
-    std::vector<State_s::PoleState_s> pole_change; pole_change.reserve(_pole_count);
+    std::vector<State_s::PoleState_s> pole_changes; pole_changes.reserve(_pole_count);
 
     for (size_t i = 0 ; i < _pole_count; ++i) {
         const Pole_s& pole = _poles[i];
         const State_s::PoleState_s& pole_state = current_state.poles[i];
 
-        // The 1st and 2nd derivatives will be applied to the 0th and 1st
-        Float_t& dth = pole_change[i].theta;
-        Float_t& ddth = pole_change[i].dtheta;
+        // Add a new pole state
+        pole_changes.push_back({0,0});
+        State_s::PoleState_s& change = pole_changes.back();
 
         // Update derivative
-        dth = pole_state.dtheta;
+        change.theta = pole_state.dtheta;
 
         // Compute second derivative
-        ddth = (
-            (Float_t{-0.75} / pole.length) * (ddx*Math::cos(pole_state.theta))
-            + PARAMTERS.gravity*Math::sin(pole_state.theta)
-        );
+        change.dtheta = ((Float_t{-0.75} / pole.length) * (
+              (ddx*Math::cos(pole_state.theta))
+            + (PARAMTERS.gravity*Math::sin(pole_state.theta))
+            + (pole.hinge_friction*pole_state.dtheta) / (pole.mass*pole.length)
+        ));
     }
 
     return {
-        Cart_s{current_state.cart.dx, ddx},
-        std::move(pole_change)
+        State_s::CartState_s{current_state.cart.dx, ddx},
+        std::move(pole_changes)
     };
 }
 
