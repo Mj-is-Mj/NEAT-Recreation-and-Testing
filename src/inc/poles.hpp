@@ -87,6 +87,11 @@ namespace PoleProblems {
         struct Parameters_s {
             Float_t step_size;
             Float_t gravity;
+
+            Cart_s cart;
+            std::vector<Pole_s> poles;
+
+            constexpr size_t pole_count() const { return poles.size(); }
         };
 
         struct State_s {
@@ -109,6 +114,7 @@ namespace PoleProblems {
                     , dtheta(pole.initial_velocity)
                 {}
             };
+
             struct CartState_s {
                 Float_t x;
                 Float_t dx;
@@ -127,31 +133,38 @@ namespace PoleProblems {
             CartState_s cart;
             std::vector<PoleState_s> poles;
 
-            template<typename... Poles_tmp>
             State_s(
-                const Cart_s& cart,
-                const Poles_tmp... poles
-            )
-                : cart(cart)
-                , poles{poles...}
-            {}
-
-            State_s(
-                const Cart_s& cart,
-                std::vector<PoleState_s> poles
+                const CartState_s& cart, 
+                const std::vector<PoleState_s> poles
             )
                 : cart(cart)
                 , poles{poles}
             {}
 
+            State_s(
+                const Cart_s& cart,
+                const std::vector<Pole_s>& poles
+            )
+                : cart(cart)
+                , poles{}
+            {
+                this->poles.reserve(poles.size());
+                for (size_t i = 0; i < poles.size(); ++i)
+                    this->poles.emplace_back(poles[i]);
+            }
+
+            template<typename Cart_tmp, typename... Poles_tmp>
+            State_s(
+                const Cart_tmp& cart,
+                const Poles_tmp&... poles
+            )
+                : cart(cart)
+                , poles{poles...}
+            {}
+
             State_s(const State_s& other)
                 : cart(other.cart)
                 , poles(other.poles)
-            {}
-
-            State_s(const CartState_s& other_cart, const std::vector<PoleState_s> other_poles)
-                : cart(other_cart)
-                , poles(other_poles)
             {}
 
             State_s operator+(const State_s& other) const;
@@ -160,9 +173,6 @@ namespace PoleProblems {
         };
 
         private:
-            const size_t _pole_count;
-            const Cart_s _cart;
-            const std::vector<Pole_s> _poles;
             State_s _state;
 
             State_s _ROC(const Float_t cart_force, const State_s current_state) const;
@@ -170,16 +180,10 @@ namespace PoleProblems {
         public:
             const Parameters_s PARAMTERS;
 
-            template<typename... Poles_tmp>
             CartWithPoles_s(
-                const Parameters_s params,
-                const Cart_s cart,
-                const Poles_tmp... poles
+                const Parameters_s params
             ) 
-                : _pole_count(sizeof...(poles))
-                , _cart(cart)
-                , _poles{poles...}
-                , _state(cart, poles...)
+                : _state(params.cart, params.poles)
                 , PARAMTERS(params)
             {}
 
@@ -187,8 +191,6 @@ namespace PoleProblems {
 
             void step(const Float_t cart_force, const Float_t step_size);
             inline void step(const Float_t cart_force) { step(cart_force, PARAMTERS.step_size); }
-
-
     };
 
 

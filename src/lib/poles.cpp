@@ -48,8 +48,8 @@ CartWithPoles_s::State_s CartWithPoles_s::_ROC(const Float_t cart_force, const S
     Float_t effective_pole_mass = 0;
 
     // Compute effective forces and masses
-    for (size_t i = 0; i < _pole_count; ++i) {
-        const Pole_s& pole = _poles[i];
+    for (size_t i = 0; i < PARAMTERS.pole_count(); ++i) {
+        const Pole_s& pole = PARAMTERS.poles[i];
         const State_s::PoleState_s& pole_state = current_state.poles[i];
 
         effective_pole_force += (
@@ -73,15 +73,15 @@ CartWithPoles_s::State_s CartWithPoles_s::_ROC(const Float_t cart_force, const S
 
     // Cart positional acceleration
     const Float_t ddx = (
-        (cart_force - _cart.track_friction*Math::sgn(current_state.cart.dx) + effective_pole_force)
-        / (_cart.mass + effective_pole_mass)
+        (cart_force - PARAMTERS.cart.track_friction*Math::sgn(current_state.cart.dx) + effective_pole_force)
+        / (PARAMTERS.cart.mass + effective_pole_mass)
     );
 
     // Pole angular accelerations
-    std::vector<State_s::PoleState_s> pole_changes; pole_changes.reserve(_pole_count);
+    std::vector<State_s::PoleState_s> pole_changes; pole_changes.reserve(PARAMTERS.pole_count());
 
-    for (size_t i = 0 ; i < _pole_count; ++i) {
-        const Pole_s& pole = _poles[i];
+    for (size_t i = 0 ; i < PARAMTERS.pole_count(); ++i) {
+        const Pole_s& pole = PARAMTERS.poles[i];
         const State_s::PoleState_s& pole_state = current_state.poles[i];
 
         // Add a new pole state

@@ -32,20 +32,20 @@ int main() {
         PoleProblems::CartWithPoles_s::Parameters_s{
             .step_size = 0.12,
             .gravity = -9.8,
-        },
-        PoleProblems::Cart_s{
-            .mass = 0.5,
-            .track_range = 4,
-            .initial_position = 0.0,
-            .initial_velocity = 0.0,
-            .track_friction = 0.8,
-        },
-        PoleProblems::Pole_s{
-            .mass = 4,
-            .length = 1,
-            .hinge_friction = 0.00,
-            .initial_angle = 0,
-            .initial_velocity = 0.0001,
+            .cart = {
+                .mass = 0.5,
+                .track_range = 4,
+                .initial_position = 0.0,
+                .initial_velocity = 0.0,
+                .track_friction = 0.8,
+            },
+            .poles = {{
+                .mass = 4,
+                .length = 1,
+                .hinge_friction = 0.00,
+                .initial_angle = 0,
+                .initial_velocity = 0.0001,
+            }}
         }
     );
 
