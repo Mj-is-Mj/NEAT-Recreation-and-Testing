@@ -1,5 +1,6 @@
 #pragma once
 
+#include "mathutil.hpp"
 #include <vector>
 
 /*
@@ -77,9 +78,9 @@ namespace PoleProblems {
     struct Cart_s {
         const Float_t mass;
         const Float_t track_range;
+        const Float_t track_friction;
         const Float_t initial_position;
         const Float_t initial_velocity;
-        const Float_t track_friction;
     };
 
 
@@ -92,6 +93,34 @@ namespace PoleProblems {
             std::vector<Pole_s> poles;
 
             constexpr size_t pole_count() const { return poles.size(); }
+        };
+
+        inline static const Parameters_s DEFAULT_PARAMETERS = {
+            .step_size = 0.01,
+            .gravity = Math::Constants<Float_t>::EARTH_GRAV,
+            .cart = {
+                .mass = 1.0, /* Not specified */
+                .track_range = 4.8, /* K.O. Stanley ch. 4.31 */
+                .track_friction = 0.05, /* Not specified */
+                .initial_position = 0.0, /* Assumed */
+                .initial_velocity = 0.0, /* Assumed */
+            },
+            .poles = {
+                {
+                    .mass = 1.0, /* Not specified, but Wieland states that pole mass was proportional to length */
+                    .length = 1.0, /* K.O. Stanley ch. 4.31 */
+                    .hinge_friction = 0.05, /* Not specified */
+                    .initial_angle = Math::Constants<Float_t>::PI / 180, /* K.O. Stanley ch. 4.31 */
+                    .initial_velocity = 0.0, /* Assumed */
+                },
+                // {
+                //     .mass = 0.1, /* Not specified, but Wieland states that pole mass was proportional to length */
+                //     .length = 0.1, /* K.O. Stanley ch. 4.31 */
+                //     .hinge_friction = 0.0, /* Not specified */
+                //     .initial_angle = 0.0, /* Assumed */
+                //     .initial_velocity = 0.0, /* Assumed */
+                // }
+            }
         };
 
         struct State_s {
@@ -178,19 +207,19 @@ namespace PoleProblems {
             State_s _ROC(const Float_t cart_force, const State_s current_state) const;
 
         public:
-            const Parameters_s PARAMTERS;
+            const Parameters_s PARAMETERS;
 
             CartWithPoles_s(
-                const Parameters_s params
+                const Parameters_s params = DEFAULT_PARAMETERS
             ) 
                 : _state(params.cart, params.poles)
-                , PARAMTERS(params)
+                , PARAMETERS(params)
             {}
 
             constexpr const State_s& getState() { return _state; }
 
             void step(const Float_t cart_force, const Float_t step_size);
-            inline void step(const Float_t cart_force) { step(cart_force, PARAMTERS.step_size); }
+            inline void step(const Float_t cart_force) { step(cart_force, PARAMETERS.step_size); }
     };
 
 

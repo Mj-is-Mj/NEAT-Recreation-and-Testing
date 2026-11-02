@@ -9,8 +9,9 @@ template<typename Type>
 struct Constants {
     #define MAKE_CONST(name, literal) static constexpr Type name = static_cast<Type>(literal);
     
-    MAKE_CONST(PI,      3.1415926535)
-    MAKE_CONST(EULER,   2.7182818284)
+    MAKE_CONST(PI,          3.1415926535)
+    MAKE_CONST(EULER,       2.7182818284)
+    MAKE_CONST(EARTH_GRAV, -9.80665)
 };
 
 // Power function
@@ -33,4 +34,6 @@ constexpr f_tmp sin2(const f_tmp theta) { f_tmp r = Math::sin(theta); return r*r
 template<typename f_tmp>
 constexpr f_tmp sgn(const f_tmp x) { return (x < 0 ? f_tmp{-1} : (x > 0) ? f_tmp{1} : 0); }
 
+template<typename f_tmp>
+constexpr f_tmp abs(const f_tmp x) { return (x < 0 ? -x : x); }
 }

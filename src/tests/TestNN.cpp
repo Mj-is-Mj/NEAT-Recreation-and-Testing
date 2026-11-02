@@ -1,12 +1,15 @@
 #include "../inc/NN.hpp"
 #include "../inc/NEAT.hpp"
+#include "../inc/mathutil.hpp"
+#include "../inc/poles.hpp"
+
+#include <array>
+#include <cstdlib>
 
 static_assert(__cplusplus >= 202002L, "TestNN.cpp requires C++20 or greater");
-
 NEAT::Parameters_s LOCAL_PARAMS = NEAT::DEFAULT_PARAMETERS;
 
 bool dbg = false;
-
 // Fitness function that uses a NN:BasicNetwork_s
 // Network outputs > 0.5 are treated as 1, else 0
 NEAT::Float_t xor_eval(const NEAT::Genome_s& genome) {
@@ -52,8 +55,93 @@ NEAT::Float_t xor_eval(const NEAT::Genome_s& genome) {
     return (fit + 2.0f)*0.25f;
 };
 
+NEAT::Float_t pole_eval(const NEAT::Genome_s& genome) {
+    // NN from genome
+    NN::SequentialNetwork_s network(
+        genome, 
+        NN::Activations::sigmoidX<NN::Float_t{4.9}>,
+        NN::Activations::sigmoidX<NN::Float_t{4.9}>
+    );
 
-int main() {
+    // Pole balance using default parameters
+        // See `PoleProblems::CartWithPoles_s::DEFAULT_PARAMETERS`
+    PoleProblems::CartWithPoles_s pole_balance{};
+
+    // Constants
+    static constexpr NN::Float_t balanced_thresh = 36 * Math::Constants<NN::Float_t>::PI / 180;
+    static constexpr int max_steps = 1e5;
+
+    // Make input array
+    NN::Float_t* input_arr = (NN::Float_t*)calloc(genome.getInputNodeCount(), sizeof(NN::Float_t));
+    if (input_arr == nullptr) {
+        std::cerr << "FAILED TO MALLOC IN " << __func__ << std::endl;
+        exit(-1);
+    }
+
+    // Loop variables
+    int steps = 0;
+    NN::Float_t force = 0;
+    bool not_failed = true;
+
+    // Main loop
+    while(not_failed && steps < max_steps) {
+        // Rescale input values to range of [-1, 1]
+        #define SCALE(x) (2.*NN::Activations::sigmoid(x) - 1.)
+        #define LIN_SCALE(x,r) (x * (1. / r))
+        {
+            const auto& pp_state = pole_balance.getState();
+
+            // Bias node
+            input_arr[0] = 1.f;
+
+            // Cart state
+            input_arr[1] = LIN_SCALE(pp_state.cart.x, 4.8); // **Use a linear scale for this?
+            input_arr[2] = SCALE(pp_state.cart.dx);
+
+            // Pole states
+            for (size_t i = 0; i < pp_state.poles.size(); ++i) {
+                input_arr[3 + 2*i] = SCALE(pp_state.poles[i].theta); // **Use a linear scale for this?
+                input_arr[4 + 2*i] = SCALE(pp_state.poles[i].dtheta);
+            }
+        }
+        
+        // Eval network
+        force = 20. * (*network.stepThis(input_arr) - 0.5);
+        
+        // Step simulation with force applied (twice)
+        pole_balance.step(force);
+        pole_balance.step(force);
+
+        {
+            const auto& pp_state = pole_balance.getState();
+
+            // If any pole is "out of balance", then fail/end
+            for (size_t i = 0; i < pp_state.poles.size(); ++i) {
+                if (Math::abs(pp_state.poles[i].theta) > balanced_thresh) {
+                    not_failed = false;
+                    break;
+                }
+            }
+
+            // If cart is out of bounds, then fail/end
+            if (Math::abs(pp_state.cart.x) > pole_balance.PARAMETERS.cart.track_range)
+                not_failed = false;
+        }
+        ++steps;
+    }
+
+    // ** Temporary
+    if (steps == max_steps) {
+        std::cout << "SOLUTION FOUND" << std::endl;
+        exit(0);
+    }
+
+    free(input_arr);
+
+    return (NEAT::Float_t)steps * 0.02;
+}
+
+void test_xor() {
     // srand(time(0));
 
     NEAT::GenePool_s pool(
@@ -81,4 +169,59 @@ int main() {
     for (const auto& genome : pool.getGenePool()) {
         pool.evaluateGenome(genome);
     }
+}
+
+/*
+    Difference in results:
+        Actual performance:
+            Poles are only being balanced for a few seconds after a hundred or 
+            so generations, which is significantly worse than the paper's results. 
+        Speciation:
+            Figure 7 clearly shows that the population would speciate quite a lot,
+            (ending with 14 species), whereas I'm only single single-digit total
+            species, with only one surviving. 
+*/
+void test_pole() {
+    // srand(time(0));
+
+    auto params = NEAT::DEFAULT_PARAMETERS;
+
+    const size_t num_inputs = (0
+        + 1 // Bias node
+        + 2 // Cart position/velocity
+        // Pole positions/velocities
+        + 2*PoleProblems::CartWithPoles_s::DEFAULT_PARAMETERS.pole_count()
+    );
+
+    NEAT::GenePool_s pool(
+        num_inputs, 1, 0,
+        params, 
+        pole_eval
+    );
+
+    const NEAT::Genome_s BASE(pool, true);
+    pool.addGenome(BASE, 3);
+    pool.evaluatePopulation();
+    pool.simplifiedPrint(std::cout);
+
+
+    for (size_t i = 0; i < 256; ++i) {
+        pool.newGeneration();
+
+        pool.simplifiedPrint(std::cout);
+    }
+
+    pool.simplifiedPrint(std::cout);
+
+    dbg = true;
+
+    for (const auto& genome : pool.getGenePool()) {
+        pool.evaluateGenome(genome);
+    }
+}
+
+
+int main() {
+    test_pole();
+    return 0;
 }

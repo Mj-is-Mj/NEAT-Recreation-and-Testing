@@ -28,26 +28,7 @@ void csv(std::ostream& out, const PoleProblems::CartWithPoles_s::State_s& state)
 
 // See result in desmos - https://www.desmos.com/calculator/vtyy0brmun
 int main() {
-    PoleProblems::CartWithPoles_s pole_balance(
-        PoleProblems::CartWithPoles_s::Parameters_s{
-            .step_size = 0.12,
-            .gravity = -9.8,
-            .cart = {
-                .mass = 0.5,
-                .track_range = 4,
-                .initial_position = 0.0,
-                .initial_velocity = 0.0,
-                .track_friction = 0.8,
-            },
-            .poles = {{
-                .mass = 4,
-                .length = 1,
-                .hinge_friction = 0.00,
-                .initial_angle = 0,
-                .initial_velocity = 0.0001,
-            }}
-        }
-    );
+    PoleProblems::CartWithPoles_s pole_balance{};
 
     for (size_t i = 0; i < 256; ++i) {
         // std::cout << "----- STEP " << i << " -----" << std::endl;

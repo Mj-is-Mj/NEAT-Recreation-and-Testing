@@ -48,8 +48,8 @@ CartWithPoles_s::State_s CartWithPoles_s::_ROC(const Float_t cart_force, const S
     Float_t effective_pole_mass = 0;
 
     // Compute effective forces and masses
-    for (size_t i = 0; i < PARAMTERS.pole_count(); ++i) {
-        const Pole_s& pole = PARAMTERS.poles[i];
+    for (size_t i = 0; i < PARAMETERS.pole_count(); ++i) {
+        const Pole_s& pole = PARAMETERS.poles[i];
         const State_s::PoleState_s& pole_state = current_state.poles[i];
 
         effective_pole_force += (
@@ -57,7 +57,7 @@ CartWithPoles_s::State_s CartWithPoles_s::_ROC(const Float_t cart_force, const S
             + (0.75*pole.mass*Math::cos(pole_state.theta))
             * (
                 (pole.hinge_friction*pole_state.dtheta) / (pole.mass*pole.length)
-                + PARAMTERS.gravity * sin(pole_state.theta)
+                + PARAMETERS.gravity * sin(pole_state.theta)
             )
         );
 
@@ -66,22 +66,17 @@ CartWithPoles_s::State_s CartWithPoles_s::_ROC(const Float_t cart_force, const S
         );
     }
 
-    /*
-        Note: Since this yeilds the rate of change, Nth derivatives will be
-        stored in (N-1)th derivatives. E.g., cart position will hold the computed cart velocity
-    */
-
     // Cart positional acceleration
     const Float_t ddx = (
-        (cart_force - PARAMTERS.cart.track_friction*Math::sgn(current_state.cart.dx) + effective_pole_force)
-        / (PARAMTERS.cart.mass + effective_pole_mass)
+        (cart_force - PARAMETERS.cart.track_friction*Math::sgn(current_state.cart.dx) + effective_pole_force)
+        / (PARAMETERS.cart.mass + effective_pole_mass)
     );
 
     // Pole angular accelerations
-    std::vector<State_s::PoleState_s> pole_changes; pole_changes.reserve(PARAMTERS.pole_count());
+    std::vector<State_s::PoleState_s> pole_changes; pole_changes.reserve(PARAMETERS.pole_count());
 
-    for (size_t i = 0 ; i < PARAMTERS.pole_count(); ++i) {
-        const Pole_s& pole = PARAMTERS.poles[i];
+    for (size_t i = 0 ; i < PARAMETERS.pole_count(); ++i) {
+        const Pole_s& pole = PARAMETERS.poles[i];
         const State_s::PoleState_s& pole_state = current_state.poles[i];
 
         // Add a new pole state
@@ -94,14 +89,14 @@ CartWithPoles_s::State_s CartWithPoles_s::_ROC(const Float_t cart_force, const S
         // Compute second derivative
         change.dtheta = ((Float_t{-0.75} / pole.length) * (
               (ddx*Math::cos(pole_state.theta))
-            + (PARAMTERS.gravity*Math::sin(pole_state.theta))
+            + (PARAMETERS.gravity*Math::sin(pole_state.theta))
             + (pole.hinge_friction*pole_state.dtheta) / (pole.mass*pole.length)
         ));
     }
 
     return {
         State_s::CartState_s{current_state.cart.dx, ddx},
-        std::move(pole_changes)
+        pole_changes
     };
 }
 

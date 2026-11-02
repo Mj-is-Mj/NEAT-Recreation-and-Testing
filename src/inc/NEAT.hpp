@@ -317,6 +317,7 @@ struct GenePool_s {
         /// Debugging /// 
         NodeType_e getNodeType(const NodeID_t n) const;
         friend std::ostream& operator<<(std::ostream& out, const GenePool_s& pool);
+        void simplifiedPrint(std::ostream& out) const;
         void printNode(std::ostream& out, const NodeID_t n) const;
 
         /// "Main" function ///
@@ -488,7 +489,7 @@ struct Genome_s {
         const NodeID_t from, const NodeID_t to, 
         const Float_t weight = 1, const bool enabled = true
     );
-    void addNode(Gene_s& connection);
+    void addNode(const GeneID_t genome_id);
 
     /// Mutations ///
     inline Float_t getRandomWeight() const { 

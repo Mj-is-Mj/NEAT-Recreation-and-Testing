@@ -609,7 +609,7 @@ std::ostream& operator<<(std::ostream& out, const GenePool_s& pool) {
 
     out << "Parameters {" << std::endl
         << "\tInputs:  " << pool.INPUT_NODE_COUNT << std::endl
-        << "\tOutputs: " << pool.INPUT_NODE_COUNT << std::endl
+        << "\tOutputs: " << pool.OUTPUT_NODE_COUNT << std::endl
         << "\tBais:    " << (pool.HAS_BIAS_NODE ? "present" : "absent")
         << std::endl << "}" << std::endl;
 
@@ -643,6 +643,36 @@ std::ostream& operator<<(std::ostream& out, const GenePool_s& pool) {
     out << "}" << std::endl;
 
     return out;
+}
+
+void GenePool_s::simplifiedPrint(std::ostream& out) const {
+    out << "CURRENT GENERATION:   " <<_generation_num << std::endl;
+    out << "Population size:      " <<_gene_pool.size() << std::endl;
+    out.precision(5);
+    out << "Highest seen fitness: " <<_max_cumulative_fitness << std::endl;
+    out << "Last improved gen:    " <<_last_improved_generation << std::endl;
+
+    out << "Parameters {" << std::endl
+        << "\tInputs:  " <<INPUT_NODE_COUNT << std::endl
+        << "\tOutputs: " <<OUTPUT_NODE_COUNT << std::endl
+        << "\tBais:    " << (HAS_BIAS_NODE ? "present" : "absent")
+        << std::endl << "}" << std::endl;
+
+    for (const auto& spec :_species) {
+        out << "Species " << spec.ID << ": {" << std::endl
+            << "\tExitinct:        " << (spec.extinct ? "yes" : "no") << std::endl
+            << "\tMAX Fitness OAT: " << spec.cumulative_max_fitness << std::endl
+            << "\tCurrent Max Fit: " << spec.current_max_fitness<< std::endl
+            << "\tCurrent Avg Fit: " << spec.current_avg_fitness << std::endl
+            << "\tAppear in gen:   " << spec.generation_of_inception << std::endl
+            << "\tLast Imprvd Gen: " << spec.last_improved_generation << std::endl
+            << "\tMembers: " << spec.getPopSize() << std::endl;
+        out << "}\n" << std::endl;
+    }
+
+    if (_species.size() > 0) return;
+
+    out << "Members: " << _gene_pool.size() << std::endl;
 }
 
 
@@ -767,19 +797,29 @@ void Genome_s::addConnection(
     );
 }
 
-void Genome_s::addNode(Gene_s& connection) {
+void Genome_s::addNode(const GeneID_t genome_id) {
+    /*
+    Initial Genome: {AB}
+    A --> B
+
+    Final Genome: {AB, CB, AC}
+    A --> C --> B
+     '---------^
+    */
+
     // the old connection is disabled
-    connection.enabled = false;
-    // The connection leading into the new node gets a weight of 1
-    addConnection(connection.FROM, node_count, 1, true);
+    genome[genome_id].enabled = false;
+
     // The connection leading from the new node gets the old connection's weight
-    addConnection(node_count, connection.TO, connection.weight, true);
+    addConnection(node_count, genome[genome_id].TO, genome[genome_id].weight, true);
+    // The connection leading into the new node gets a weight of 1
+    addConnection(genome[genome_id].FROM, node_count, 1, true);
 
     ++node_count;
 }
 
 void Genome_s::mutateAddNode() {
-    addNode(genome[getRandomGeneID()]);
+    addNode(getRandomGeneID());
 }
 
 bool Genome_s::mutateAddConnection() {
