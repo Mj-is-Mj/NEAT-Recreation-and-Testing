@@ -101,25 +101,25 @@ namespace PoleProblems {
             .cart = {
                 .mass = 1.0, /* Not specified */
                 .track_range = 4.8, /* K.O. Stanley ch. 4.31 */
-                .track_friction = 0.05, /* Not specified */
+                .track_friction = 0.01, /* Not specified */
                 .initial_position = 0.0, /* Assumed */
                 .initial_velocity = 0.0, /* Assumed */
             },
             .poles = {
                 {
-                    .mass = 1.0, /* Not specified, but Wieland states that pole mass was proportional to length */
+                    .mass = 0.1, /* Not specified, but Wieland states that pole mass was proportional to length */
                     .length = 1.0, /* K.O. Stanley ch. 4.31 */
-                    .hinge_friction = 0.05, /* Not specified */
+                    .hinge_friction = 0.001, /* Not specified */
                     .initial_angle = Math::Constants<Float_t>::PI / 180, /* K.O. Stanley ch. 4.31 */
                     .initial_velocity = 0.0, /* Assumed */
                 },
-                // {
-                //     .mass = 0.1, /* Not specified, but Wieland states that pole mass was proportional to length */
-                //     .length = 0.1, /* K.O. Stanley ch. 4.31 */
-                //     .hinge_friction = 0.0, /* Not specified */
-                //     .initial_angle = 0.0, /* Assumed */
-                //     .initial_velocity = 0.0, /* Assumed */
-                // }
+                {
+                    .mass = 0.01, /* Not specified, but Wieland states that pole mass was proportional to length */
+                    .length = 0.1, /* K.O. Stanley ch. 4.31 */
+                    .hinge_friction = 0.001, /* Not specified */
+                    .initial_angle = 0.0, /* Assumed */
+                    .initial_velocity = 0.0, /* Assumed */
+                }
             }
         };
 

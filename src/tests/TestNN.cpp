@@ -3,7 +3,6 @@
 #include "../inc/mathutil.hpp"
 #include "../inc/poles.hpp"
 
-#include <array>
 #include <cstdlib>
 
 static_assert(__cplusplus >= 202002L, "TestNN.cpp requires C++20 or greater");
@@ -95,7 +94,7 @@ NEAT::Float_t pole_eval(const NEAT::Genome_s& genome) {
             input_arr[0] = 1.f;
 
             // Cart state
-            input_arr[1] = LIN_SCALE(pp_state.cart.x, 4.8); // **Use a linear scale for this?
+            input_arr[1] = LIN_SCALE(pp_state.cart.x, pole_balance.PARAMETERS.cart.track_range); // **Use a linear scale for this?
             input_arr[2] = SCALE(pp_state.cart.dx);
 
             // Pole states
@@ -133,7 +132,6 @@ NEAT::Float_t pole_eval(const NEAT::Genome_s& genome) {
     // ** Temporary
     if (steps == max_steps) {
         std::cout << "SOLUTION FOUND" << std::endl;
-        exit(0);
     }
 
     free(input_arr);
@@ -201,6 +199,7 @@ void test_pole() {
 
     const NEAT::Genome_s BASE(pool, true);
     pool.addGenome(BASE, 3);
+    pool._forceSingleSpecies();
     pool.evaluatePopulation();
     pool.simplifiedPrint(std::cout);
 

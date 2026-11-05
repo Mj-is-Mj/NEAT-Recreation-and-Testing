@@ -38,6 +38,16 @@ namespace NEAT {
     real "failable" tests. Tests will absolutely need to be redone soon to ensure 
     everything is behaving as-expected. Not an urgent concern since eyeball tests are
     enough to see nothing is catastrophically failing. 
+
+
+        ### SHOULD BE FIXED NOW ###
+
+    "The champion of each species with more than five networks
+    was copied into the next generation unchanged" (4.1, paragraph 2). 
+
+    The minium number of species is not being respected, and the final species are being 
+    culled anyways. This is due in part to the messiness of setting/checking species
+    extinction status. 
 */
 
 
@@ -169,9 +179,9 @@ constexpr Parameters_s DEFAULT_PARAMETERS {
                 .enable_connection = 0,
                 .weight = 0.8,
             },
-            .weight_random_range = 2,
-            .weight_perturb_chance = 0.9,
-            .weight_perturb_amount = 0.1,
+            .weight_random_range = 4, // Not specified
+            .weight_perturb_chance = 0.9, 
+            .weight_perturb_amount = 0.4, // Not specified
         },
         .crossover = {
             .keep_disabled_connection = 0.75,
@@ -198,6 +208,8 @@ struct GenePool_s {
         /// Evaluation ///
         // Function used to evaluate a genome
         const EvaluateFunc_t _EVALUATE_GENOME;
+        // Number of threads used in evaluation
+        const GenomeID_t _eval_threads;
         // Whether or not the current generation has been evaluated
         bool _has_been_evaluated;
         // Whether or not species stats are up to date
@@ -226,11 +238,15 @@ struct GenePool_s {
         /// Evaluation ///
         void _updateSpeciesFitnessStats();
         void _allotOffspring();
+        static void _evaluatePopulationSector(GenePool_s* pool, const GenomeID_t sector);
 
         /// Culling ///
-        void _cullSpecies();
+        void _cullStaleSpecies();
+        void _cullEmptySpecies();
+        void _cullSpeciesIfPopStale();
         void _cullFromSpecies(Species_s& spec);
         void _cullFromAllSpecies();
+        void _updateLastSurvivingGeneration();
 
         /// Reproduction ///
         void _reproduce(const Species_s& spec, std::vector<Genome_s>& child_gene_pool);
@@ -244,7 +260,6 @@ struct GenePool_s {
             std::list<GenomeID_t>& remaining_child_genome_ids,
             const std::vector<Genome_s>& child_gene_pool
         );
-        void _forceSingleSpecies();
         void _speciate(const std::vector<Genome_s>& child_gene_pool);
         
 
@@ -260,7 +275,8 @@ struct GenePool_s {
         // Basic constructor
         GenePool_s(
             const NodeID_t inputs, const NodeID_t outputs, const bool has_bias,
-            const Parameters_s parameters, const EvaluateFunc_t eval_func
+            const Parameters_s parameters, 
+            const EvaluateFunc_t eval_func, const GenomeID_t eval_threads = 24
         );
         // No copy constructor
         GenePool_s(const GenePool_s& other) = delete;
@@ -313,6 +329,8 @@ struct GenePool_s {
         Genome_s& makeGenome(const bool fully_connect = false);
         // Add a genome to the pool
         bool addGenome(const Genome_s genome, const GenomeID_t count = 1);
+        // Place all genomes into one species
+        void _forceSingleSpecies();
 
         /// Debugging /// 
         NodeType_e getNodeType(const NodeID_t n) const;
@@ -345,8 +363,8 @@ struct Species_s {
     GenomeID_t allotted_offspring;
     // Representative for the species (will be nullptr most of the time)
     const Genome_s* representative;
-    // Self-explanatory
-    bool extinct;
+    // Best performing member of the current generation
+    const Genome_s* champion;
 
     // The IDs of the genomes of all members of the species
     std::vector<GenomeID_t> members;
@@ -362,7 +380,7 @@ struct Species_s {
             , current_max_fitness(ERR_VAL<Float_t>())
             , current_avg_fitness(ERR_VAL<Float_t>())
             , representative(nullptr)
-            , extinct(false)
+            , champion(nullptr)
             , members{genome_ids...}
     {}
 
@@ -376,7 +394,7 @@ struct Species_s {
             , current_max_fitness(other.current_max_fitness)
             , current_avg_fitness(other.current_avg_fitness)
             , representative(other.representative)
-            , extinct(other.extinct)
+            , champion(nullptr)
             , members(other.members)
     {}
 

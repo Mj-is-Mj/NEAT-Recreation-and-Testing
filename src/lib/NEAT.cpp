@@ -1,6 +1,7 @@
 #include "../inc/NEAT.hpp"
 #include "../inc/randutil.hpp"
 #include <cstdlib>
+#include <thread>
 #include <vector>
 
 // Repeat connections are not allowed to be added from "add connection"
@@ -23,12 +24,14 @@ namespace NEAT {
 
 GenePool_s::GenePool_s(
     const NodeID_t inputs, const NodeID_t outputs, const bool has_bias,
-    const Parameters_s parameters, const EvaluateFunc_t eval_func
+    const Parameters_s parameters, 
+    const EvaluateFunc_t eval_func, const GenomeID_t eval_threads
 )   : INPUT_NODE_COUNT(inputs)
     , OUTPUT_NODE_COUNT(outputs)
     , HAS_BIAS_NODE(has_bias)
     , PARAMETERS(parameters)
     , _EVALUATE_GENOME(eval_func)
+    , _eval_threads(eval_threads)
     , _has_been_evaluated(false)
     , _stats_up_to_date(false)
     , _max_cumulative_fitness(ERR_VAL<Float_t>())
@@ -90,11 +93,11 @@ NodeID_t GenePool_s::getRandomOutputNodeID() const {
 
 void GenePool_s::_updateSpeciesFitnessStats() {
     if (_gene_pool.empty()) return;
-    if (_species.empty()) _forceSingleSpecies();
+    assert(!_species.empty());
 
     for (Species_s& spec : _species) {
         // Skip extinct species
-        if (spec.extinct || spec.getPopSize() <= 0) {
+        if (spec.getPopSize() < 1) {
             continue;
         }
 
@@ -117,6 +120,7 @@ void GenePool_s::_updateSpeciesFitnessStats() {
             // Update max fitness for this generation
             if (genome.fitness > spec.current_max_fitness) {
                 spec.current_max_fitness = genome.fitness;
+                spec.champion = &genome;
                 
                 // Update max fitness of all time for the species
                 if (
@@ -133,9 +137,12 @@ void GenePool_s::_updateSpeciesFitnessStats() {
         }
 
         // Update max fitness of all time for the entire gene pool
-        if ( !IS_ERR(spec.cumulative_max_fitness)
-            && ( spec.cumulative_max_fitness > _max_cumulative_fitness
-            || IS_ERR(_max_cumulative_fitness) )
+        if (
+            !IS_ERR(spec.cumulative_max_fitness)
+            && (0
+                || spec.cumulative_max_fitness > _max_cumulative_fitness
+                || IS_ERR(_max_cumulative_fitness)
+            )
         ) {
             _max_cumulative_fitness = spec.cumulative_max_fitness;
             _last_improved_generation = _generation_num;
@@ -153,6 +160,8 @@ void GenePool_s::_updateSpeciesFitnessStats() {
         // Correct average fitness
         spec.current_avg_fitness /= valid_count;
     }
+
+    _stats_up_to_date = true;
 }
 
 void GenePool_s::_allotOffspring() {
@@ -161,7 +170,7 @@ void GenePool_s::_allotOffspring() {
 
     for (Species_s& spec : _species) {
         // Skip extinct species, and species whose evaluations failed
-        if (spec.extinct || IS_ERR(spec.current_avg_fitness)) {
+        if (spec.getPopSize() < 1 || IS_ERR(spec.current_avg_fitness)) {
             continue;
         }
         
@@ -195,7 +204,7 @@ void GenePool_s::_allotOffspring() {
     */
     for (Species_s& spec : _species) {
         // Skip extinct species, and species whose evaluations failed
-        if (spec.extinct || IS_ERR(spec.current_avg_fitness)) continue;
+        if (spec.getPopSize() < 1 || IS_ERR(spec.current_avg_fitness)) continue;
 
         if (sum_avg_fitnesss <= 01e-30) {
             spec.allotted_offspring = PARAMETERS.population_size / (Float_t)(_species.size());
@@ -206,9 +215,12 @@ void GenePool_s::_allotOffspring() {
                 * (spec.current_avg_fitness / sum_avg_fitnesss)
             );
         }
+    }
+}
 
-        if (spec.allotted_offspring < 1)
-            spec.extinct = true;
+void GenePool_s::_evaluatePopulationSector(GenePool_s* pool, const GenomeID_t sector) {
+    for (GenomeID_t i = sector; i < pool->_gene_pool.size(); i += pool->_eval_threads) {
+        pool->_gene_pool[i].evaluate();
     }
 }
 
@@ -217,8 +229,18 @@ void GenePool_s::evaluatePopulation() {
     if (_EVALUATE_GENOME == nullptr) return;
     if (_gene_pool.empty()) return;
 
-    for (Genome_s& genome : _gene_pool) {
-        genome.evaluate();
+    if (_eval_threads <= 1) {
+        for (Genome_s& genome : _gene_pool) {
+            genome.evaluate();
+        }
+    }
+    else {
+        std::vector<std::thread> threads; threads.reserve(_eval_threads);
+
+        for (GenomeID_t i = 0; i < _eval_threads; ++i)
+            threads.emplace_back(_evaluatePopulationSector, this, i);
+        for (GenomeID_t i = 0; i < _eval_threads; ++i)
+            threads[i].join();
     }
 
     _has_been_evaluated = true;
@@ -226,34 +248,49 @@ void GenePool_s::evaluatePopulation() {
     _updateSpeciesFitnessStats();
 }
 
-void GenePool_s::_cullSpecies() {
+void GenePool_s::_cullStaleSpecies() {
+    const GenerationID_t& SPEC_STAG_LIMIT = PARAMETERS.stagnation.species_stagnation_limit;
+    const SpeciesID_t& MIN_SPEC_COUNT = PARAMETERS.stagnation.minimum_species_count;
+
+    // Cull any stagnating/stale or extinct species
+    auto sitr = _species.begin();
+    GenerationID_t species_staleness;
+    while (sitr != _species.end() && _species.size() > MIN_SPEC_COUNT) {
+        auto& spec = *sitr;
+        species_staleness = this->_generation_num - spec.last_improved_generation;
+
+        if (species_staleness > SPEC_STAG_LIMIT || spec.getPopSize() < 1)
+            sitr = _species.erase(sitr);
+        else
+            ++sitr;
+    }
+
+    _stats_up_to_date = false;
+}
+
+
+void GenePool_s::_cullEmptySpecies() {
+    auto sitr = _species.begin();
+    while (sitr != _species.end()) {
+        if (sitr->getPopSize() < 1)
+            sitr = _species.erase(sitr);
+        else
+            ++sitr;
+    }
+
+    _stats_up_to_date = false;
+}
+
+void GenePool_s::_cullSpeciesIfPopStale() {
     struct SortSpecies {
         bool operator()(const Species_s& lhs, const Species_s& rhs) {
             return lhs.cumulative_max_fitness > rhs.cumulative_max_fitness;
         }
     };
 
-    const GenerationID_t& SPEC_STAG_LIMIT = PARAMETERS.stagnation.species_stagnation_limit;
     const GenerationID_t& POP_STAG_LIMIT = PARAMETERS.stagnation.population_stagnation_limit;
     const SpeciesID_t& MIN_SPEC_COUNT = PARAMETERS.stagnation.minimum_species_count;
-
-    // Cull any stagnating/stale or extinct species
-    auto sitr = _species.begin();
-    GenerationID_t species_staleness;
-    while (sitr != _species.end()) {
-        auto& spec = *sitr;
-        species_staleness = this->_generation_num - spec.last_improved_generation;
-
-        if (spec.extinct || species_staleness > SPEC_STAG_LIMIT || spec.getPopSize() < 1) {
-            spec.extinct = true;
-            sitr = _species.erase(sitr);
-        }
-        else {
-            spec.last_living_generation = this->_generation_num;
-            ++sitr;
-        }
-    }
-
+    
     // Cull down to a fixed number of species if the population as a whole is stagnating
         // [page 13, footnote 2]
     GenomeID_t population_staleness = _generation_num - this->_last_improved_generation;
@@ -291,7 +328,10 @@ void GenePool_s::_cullFromSpecies(Species_s& spec) {
     std::list<GenomeID_t> sorted_genomes(spec.members.begin(), spec.members.end());
     sorted_genomes.sort(SortIDsByFitness_s(_gene_pool));
 
-    const GenomeID_t SURV_COUNT = sorted_genomes.size() * (1.0 - CULL_RATIO);
+    // Get the number of survivors
+    assert(sorted_genomes.size() > 0);
+    const GenomeID_t SURV_COUNT = std::ceil((Float_t)sorted_genomes.size() * (1.0 - CULL_RATIO));
+    assert(SURV_COUNT > 0);
 
     // Remove lowest-performers
     auto itr = sorted_genomes.begin();
@@ -308,25 +348,32 @@ void GenePool_s::_cullFromSpecies(Species_s& spec) {
 
 void GenePool_s::_cullFromAllSpecies() {
     for (auto& spec : _species) {
-        if (spec.extinct) continue;
+        if (spec.getPopSize() < 1) continue;
         _cullFromSpecies(spec);
     }
 
     _stats_up_to_date = false;
 }
 
+
+void GenePool_s::_updateLastSurvivingGeneration() {
+    for (Species_s& spec : _species) {
+        spec.last_living_generation = this->_generation_num;
+    }
+}
+
 GenomeID_t GenePool_s::_selectFromOtherSpecies(const Species_s& given) {
     GenomeID_t count = 0;
 
     for (const Species_s& spec : _species) {
-        if (spec.extinct) continue;
+        if (spec.getPopSize() < 1) continue;
         if (&spec == &given) continue; // **Might be safer to switch this to `spec.ID == given.ID`. Only makes a difference if a copy of species is used somewhere, but species shouldn't be copied anyways. 
         count += spec.getPopSize();
     }
 
     GenomeID_t rand = RandUtil::randUpTo(count);
     for (const Species_s& spec : _species) {
-        if (spec.extinct) continue;
+        if (spec.getPopSize() < 1) continue;
         if (&spec == &given) continue;
         if (rand < spec.getPopSize()) return spec.members[rand];
 
@@ -345,8 +392,7 @@ void GenePool_s::_reproduce(
     
     // Validate species
     if (
-        spec.extinct 
-        || spec.allotted_offspring < 1
+        spec.allotted_offspring < 1
         || IS_ERR(spec.allotted_offspring)
         || spec.allotted_offspring > PARAMETERS.population_size
         || spec.getPopSize() < 1
@@ -362,6 +408,13 @@ void GenePool_s::_reproduce(
         std::swap(member_ids[a], member_ids[b]);
     }
 
+    // "The champion of each species with more than five networks was copied into the next generation unchanged" (4.1, paragraph 2). 
+    GenomeID_t i = 0;
+    if (spec.getPopSize() > 5) {
+        i = 1;
+        child_gene_pool.push_back(*spec.champion);
+    }
+
     const bool ALLOW_INTRA_CROSS = spec.getPopSize() > 1;
     const bool ALLOW_INTER_CROSS = _species.size() > 1;
 
@@ -369,7 +422,7 @@ void GenePool_s::_reproduce(
     GenomeID_t iA=0,iB=0;
     // Indices for `member_ids`
     GenomeID_t miA,miB;
-    for (GenomeID_t i = 0; i < spec.allotted_offspring; ++i) {
+    for ((void)i; i < spec.allotted_offspring; ++i) {
         miA = i % member_ids.size();
         iA = member_ids[miA];
 
@@ -421,7 +474,7 @@ std::vector<Genome_s> GenePool_s::_reproduce() {
     child_gene_pool.reserve(PARAMETERS.population_size);
 
     for (auto& spec : _species) {
-        if (spec.extinct) continue;
+        if (spec.getPopSize() < 1) continue;
 
         _reproduce(
             spec,
@@ -434,7 +487,7 @@ std::vector<Genome_s> GenePool_s::_reproduce() {
 
 void GenePool_s::_selectRepresentatives() {
     for (Species_s& spec : _species) {
-        if (spec.extinct) continue;
+        if (spec.getPopSize() < 1) continue;
         spec.representative = &(_gene_pool[RandUtil::randFrom(spec.members)]);
     }
 }
@@ -445,6 +498,8 @@ void GenePool_s::_takeNewMembers(
     const std::vector<Genome_s>& child_gene_pool
 ) {
     const Float_t& THRESH = PARAMETERS.cdf.distance_thresh;
+
+    assert(spec.representative != nullptr);
 
     spec.members.clear();
 
@@ -490,7 +545,7 @@ void GenePool_s::_speciate(const std::vector<Genome_s>& child_gene_pool) {
 
     // Take members for each existing species
     for (auto& spec : _species) {
-        if (spec.extinct) continue;
+        if (spec.getPopSize() < 1) continue;
         _takeNewMembers(
             spec,
             remaining_child_genome_ids,
@@ -525,26 +580,29 @@ void GenePool_s::_speciate(const std::vector<Genome_s>& child_gene_pool) {
 void GenePool_s::newGeneration() {
     // Esnure there are genomes
     if (_gene_pool.size() < 1) return;
-    // Ensure there is at least one species
-    if (_species.empty()) _forceSingleSpecies();
+    // // Ensure there is at least one species
+    // if (_species.empty()) _forceSingleSpecies();
+    assert(!_species.empty());
 
     // Ensure the most recent population has been evaluated and species stats have been generated
     if (!_has_been_evaluated) {
         evaluatePopulation();
     }
 
+    // If it's been too long since improvment, cull down to a fixed number of species
+    _cullSpeciesIfPopStale();
     // Cull stale species
-    _cullSpecies();
+    _cullStaleSpecies();
     // Cull low-performing organisms from each species
     _cullFromAllSpecies();
+    // Update the last living generation for all species
+    _updateLastSurvivingGeneration();
+
     // Update species stats again
     _updateSpeciesFitnessStats();
-
     // Check if the population as a whole has stagnated
     // Allot offspring to each species
     _allotOffspring();
-    // Cull any species marked for extinction (i.e. assigned <1 offspring during `updateSpeciesStats()`)
-    _cullSpecies();
 
     // Produce next generation
     auto child_gene_pool = _reproduce();
@@ -556,7 +614,7 @@ void GenePool_s::newGeneration() {
     _has_been_evaluated = false;
 
     // Remove any empty species
-    _cullSpecies();
+    _cullEmptySpecies();
 
     // Evaluate the new population
     evaluatePopulation();
@@ -615,7 +673,6 @@ std::ostream& operator<<(std::ostream& out, const GenePool_s& pool) {
 
     for (const auto& spec : pool._species) {
         out << "Species " << spec.ID << ": {" << std::endl
-            << "\tExitinct:        " << (spec.extinct ? "yes" : "no") << std::endl
             << "\tMAX Fitness OAT: " << spec.cumulative_max_fitness << std::endl
             << "\tCurrent Max Fit: " << spec.current_max_fitness<< std::endl
             << "\tCurrent Avg Fit: " << spec.current_avg_fitness << std::endl
@@ -660,7 +717,6 @@ void GenePool_s::simplifiedPrint(std::ostream& out) const {
 
     for (const auto& spec :_species) {
         out << "Species " << spec.ID << ": {" << std::endl
-            << "\tExitinct:        " << (spec.extinct ? "yes" : "no") << std::endl
             << "\tMAX Fitness OAT: " << spec.cumulative_max_fitness << std::endl
             << "\tCurrent Max Fit: " << spec.current_max_fitness<< std::endl
             << "\tCurrent Avg Fit: " << spec.current_avg_fitness << std::endl
@@ -1105,7 +1161,8 @@ Float_t Genome_s::compatibilityDistance(const Genome_s& A, const Genome_s& B) {
 
     const auto& CDF = A.POOL.PARAMETERS.cdf;    
 
-    return ((CDF.c1*excess + CDF.c2*disjoint) / N) + CDF.c3*weight_diff;
+    // N can be set to 1 if both genomes are small, i.e., consist of fewer than 20 genes
+    return ((CDF.c1*excess + CDF.c2*disjoint) / (N < 20 ? 1 : N)) + CDF.c3*weight_diff;
 }
 
 Float_t Genome_s::evaluate() {
